@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ElectricityTimeSeries.Api/ElectricityTimeSeries.Api.csproj" />
+    <Project Path="src/ElectricityTimeSeries.Core/ElectricityTimeSeries.Core.csproj" />
+    <Project Path="src/ElectricityTimeSeries.Infrastructure/ElectricityTimeSeries.Infrastructure.csproj" />
+  </Folder>
+</Solution>
