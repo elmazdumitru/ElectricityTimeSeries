@@ -1,4 +1,7 @@
+using System.Text.Json.Serialization;
 using ElectricityTimeSeries.Api.Authorization;
+using ElectricityTimeSeries.Api.ErrorHandling;
+using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
 using ElectricityTimeSeries.Core;
 using ElectricityTimeSeries.Infrastructure;
 
@@ -9,8 +12,16 @@ builder.Services
     .AddInfrastructure();
 
 builder.Services.AddApiAuthentication();
-builder.Services.AddControllers();
+builder.Services
+    .AddControllers(options =>
+        // Report errors under the JSON field names clients send ("biddingZone"), not the C# names.
+        options.ModelMetadataDetailsProviders.Add(new SystemTextJsonValidationMetadataProvider()))
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<DomainValidationExceptionHandler>();
 builder.Services.AddHealthChecks();
 
 builder.Services.AddOpenApi();
