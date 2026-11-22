@@ -7,14 +7,22 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace ElectricityTimeSeries.Api.IntegrationTests.Authorization;
 
-public class AuthorizationTests(ApiFactory factory) : IClassFixture<ApiFactory>
+public class AuthorizationTests : IClassFixture<ApiFactory>
 {
     private const string ReadUrl = "test/authorization/read";
     private const string WriteUrl = "test/authorization/write";
     private const string NoPolicyUrl = "test/authorization/no-policy";
 
-    private readonly HttpClient _client = factory.CreateClient();
-    private readonly TestTokenFactory _tokens = factory.Tokens;
+    private readonly ApiFactory _factory;
+    private readonly HttpClient _client;
+    private readonly TestTokenFactory _tokens;
+
+    public AuthorizationTests(ApiFactory factory)
+    {
+        _factory = factory;
+        _client = factory.CreateClient();
+        _tokens = factory.Tokens;
+    }
 
     [Fact]
     public async Task Health_endpoint_allows_anonymous_access()
@@ -88,7 +96,7 @@ public class AuthorizationTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var response = await SendAsync(HttpMethod.Get, ReadUrl, _tokens.CreateToken([Scopes.TimeSeriesRead]));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains(FakeIdentityProvider.KeysUrl, factory.IdentityProvider.Requests);
+        Assert.Contains(FakeIdentityProvider.KeysUrl, _factory.IdentityProvider.Requests);
     }
 
     [Theory]
@@ -129,8 +137,8 @@ public class AuthorizationTests(ApiFactory factory) : IClassFixture<ApiFactory>
                 }
             case "signed with the public key as a shared secret":
                 // A known trick: sign with the publicly available key as if it were a password.
-                var publicKeyBytes = factory.SigningKeys.PublicKey.Parameters.Modulus;
-                var sharedSecret = new SymmetricSecurityKey(publicKeyBytes) { KeyId = factory.SigningKeys.KeyId };
+                var publicKeyBytes = _factory.SigningKeys.PublicKey.Parameters.Modulus;
+                var sharedSecret = new SymmetricSecurityKey(publicKeyBytes) { KeyId = _factory.SigningKeys.KeyId };
                 return _tokens.CreateToken(scopes, signingCredentials: new SigningCredentials(sharedSecret, SecurityAlgorithms.HmacSha256));
             case "tampered payload":
                 return WithEscalatedScope(_tokens.CreateToken(scopes));

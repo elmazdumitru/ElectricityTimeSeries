@@ -2,7 +2,7 @@
 
 A small REST API built with C# and ASP.NET Core for managing electricity market time series data, such as production, consumption and cross-border flows between bidding zones.
 
-> **Status:** the architecture, authentication and authorization, test projects and CI are in place. The domain model, CRUD endpoints and storage are in progress.
+> **Status:** the CRUD endpoints, filtering, validation, authentication and authorization, tests and CI are in place. Data is stored in memory through EF Core; moving to SQL Server is the planned next step.
 
 ## Requirements
 
@@ -50,6 +50,61 @@ Authorization: Bearer <token>
 
 User secrets are per machine, so each developer runs the commands above once after cloning.
 
+## API
+
+| Method | URL | Scope | Result |
+|---|---|---|---|
+| `GET` | `/api/time-series?biddingZone=&type=&from=&to=` | `TimeSeries.Read` | `200` with the matching series |
+| `GET` | `/api/time-series/{id}` | `TimeSeries.Read` | `200`, or `404` |
+| `POST` | `/api/time-series` | `TimeSeries.Write` | `201` with a `Location` header |
+| `PUT` | `/api/time-series/{id}` | `TimeSeries.Write` | `200` with the replaced series, or `404` |
+| `DELETE` | `/api/time-series/{id}` | `TimeSeries.Write` | `204`, or `404` |
+
+Example body for `POST` and `PUT`:
+
+```json
+{
+  "type": "CrossBorderFlow",
+  "biddingZone": "NO2",
+  "toBiddingZone": "DK1",
+  "resolution": "PT15M",
+  "points": [
+    { "timestamp": "2025-11-22T00:00:00Z", "value": 1250.5 },
+    { "timestamp": "2025-11-22T00:15:00Z", "value": 1190.0 }
+  ]
+}
+```
+
+### Data model
+
+A **time series** is a block of evenly spaced values for one bidding zone, for example "consumption in NO1 on 22 November, every 15 minutes". This matches how market data is usually exchanged: a whole block is sent, replaced or removed at once.
+
+| Field | Meaning |
+|---|---|
+| `type` | `Production`, `Consumption` or `CrossBorderFlow` |
+| `biddingZone` | The zone, for example `NO1`. For a flow, the zone the electricity leaves. |
+| `toBiddingZone` | For a flow only: the zone the electricity goes to |
+| `resolution` | How long each value lasts, as an ISO 8601 duration: `PT15M` or `PT1H` |
+| `points` | The values. Each covers the period from its `timestamp` to `timestamp` + `resolution`. |
+| `start`, `end` | Returned by the API: when the first point starts and the last point ends |
+
+### Searching
+
+- `biddingZone` matches series in that zone, and flows into or out of it.
+- `from` (inclusive) and `to` (exclusive) return the series that have data in that interval, with **only the points inside it**. A point that partly overlaps the interval is included.
+- All filters are optional and can be combined. Times must include a time zone (`Z` or an offset such as `%2B01:00`, where `%2B` is a URL-encoded `+`).
+
+### Validation
+
+Requests that break a rule return `400 Bad Request` with the list of invalid fields, in the Problem Details format. The rules:
+
+- The bidding zones must be known (see [Assumptions](#assumptions)). A flow needs a different receiving zone; other types can't have one.
+- The resolution must be 15 minutes or 1 hour.
+- There must be between 1 and 35,136 points (one year of 15-minute values).
+- Each point must start on a resolution boundary (for example 10:15, not 10:07) and follow the previous one by exactly one step: no gaps, duplicates or reordering.
+- Production and consumption can't be negative. Flows can, as a negative value means the electricity flows the other way.
+- In a search, `from` must be earlier than `to`.
+
 ## Solution structure
 
 ```
@@ -92,6 +147,9 @@ The solution follows **Clean Architecture** principles, built on the **Dependenc
 - **API contracts are separate from domain entities.** Request and response classes live in the Api project, so the public HTTP contract can change independently of the domain model and the storage model.
 - **Consistent error responses.** Errors are returned as RFC 9457 Problem Details (`AddProblemDetails`, `UseExceptionHandler`, `UseStatusCodePages`).
 - **Authentication and authorization live in the Api layer.** They are HTTP concerns, so Core and Infrastructure stay unaware of them (see [Security](#security)).
+- **The domain class is also the stored class.** There are two sets of classes, not three: request/response classes in Api, and domain classes in Core. EF Core saves the domain classes directly, and how they map to storage is described in Infrastructure (`TimeSeriesConfiguration`), so Core has no storage code. The only concession is a private constructor and private setters that EF Core uses when loading data.
+- **The domain enforces its own rules.** A `TimeSeries` can only be created or changed through `Create` and `Update`, which check every business rule, so an invalid series can't exist. A broken rule throws `DomainValidationException`, which the Api turns into a `400` response.
+- **EF Core with in-memory storage, for now.** The assignment allows in-memory storage. Using EF Core already means moving to SQL Server is a change inside Infrastructure only: replace `UseInMemoryDatabase` with `UseSqlServer` and add migrations. The column sizes, precision and indexes for that are already configured.
 - **Simplified layering.** A full Clean Architecture template usually splits Core into separate Domain and Application projects. Given the scope of this API, they are merged into a single Core project, which keeps the solution easy to navigate while preserving the dependency rule.
 
 ## Security
@@ -118,7 +176,7 @@ The tests are split into two levels. Neither needs Docker, an identity provider 
 
 | Level | What it runs against | Tokens |
 |---|---|---|
-| **Unit** | Isolated classes: business rules, `HasScope()`, `ScopeAuthorizationHandler` | none |
+| **Unit** | Isolated classes: the time series rules, `HasScope()`, `ScopeAuthorizationHandler` | none |
 | **Integration** | The full API hosted in memory with `WebApplicationFactory`, called over HTTP | signed by the test project with its own key pair |
 
 ```powershell
@@ -131,6 +189,8 @@ dotnet test
 - The API is set up **as it is delivered**: it trusts an identity provider (`Authority` plus audience) and downloads that provider's public keys when it needs them. The only test-specific setting is where those downloads go: `FakeIdentityProvider`, which answers them inside the test process.
 - Each test run creates a **public/private key pair** (`TestSigningKeys`). `TestTokenFactory` signs tokens with the private key; the API only ever sees the public key, published by the fake identity provider in the same format Keycloak or Entra ID use. Nothing secret is shared between the tests and the API.
 - Requests go through the API's real token checks, so the tests also cover expired, wrongly addressed, wrongly signed and tampered tokens, and the trick of signing with the public key as if it were a password.
+- The time series endpoints are tested with raw JSON requests, so the tests also pin down the public JSON format: field names, type names and `PT15M` durations. They cover each operation, searching, every validation rule, `404` for unknown ids, and that each endpoint needs the right scope.
+- Each test host gets its own in-memory store. Tests in the same class share a host, so each test uses its own data and only checks the series it created.
 - Authorization is tested through test-only endpoints (`AuthorizationProbeController`) that use the real policies. They are added only inside the test host and never ship with the API.
 
 **Not covered by the integration tests:** the network connection to a real identity provider (its address, HTTPS, and the provider's own setup).
@@ -142,4 +202,11 @@ dotnet test
 ## Assumptions
 
 - Access is granted per scope (read/write) for all time series. Finer-grained rules, such as restricting a client to specific bidding zones, are out of scope.
-- Further assumptions about the data model (time resolution, units, time zones) will be documented here as the model is implemented.
+- **Bidding zones:** the Nordic zones (`NO1`–`NO5`, `SE1`–`SE4`, `FI`, `DK1`, `DK2`) and the neighbouring zones they trade with (`EE`, `LV`, `LT`, `PL`, `DE-LU`, `NL`, `GB`). Codes are case-insensitive and stored in upper case.
+- **Units:** all values are in MW, the average power over each point's period.
+- **Resolution:** 15 minutes (the Nordic market time unit since 2025) or 1 hour (older data).
+- **Time zones:** clients may send any offset; times are stored and returned in UTC.
+- **Overlaps are allowed:** several series may cover the same zone, type and time. The API doesn't decide which one is correct.
+- **Last write wins:** two clients updating the same series at the same time aren't detected.
+- **No paging:** a search returns every match. Clients are expected to narrow it with filters.
+- **Data is lost on restart,** because storage is in memory.

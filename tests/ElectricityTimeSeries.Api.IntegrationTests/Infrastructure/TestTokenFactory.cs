@@ -7,9 +7,16 @@ namespace ElectricityTimeSeries.Api.IntegrationTests.Infrastructure;
 /// Issues real, signed tokens for integration tests, the way the identity provider would:
 /// signed with the private key from <see cref="TestSigningKeys"/>.
 /// </summary>
-public sealed class TestTokenFactory(TestSigningKeys keys)
+public sealed class TestTokenFactory
 {
     public const string Audience = "electricity-timeseries-api";
+
+    private readonly TestSigningKeys _keys;
+
+    public TestTokenFactory(TestSigningKeys keys)
+    {
+        _keys = keys;
+    }
 
     public string CreateToken(
         IEnumerable<string>? scopes = null,
@@ -36,7 +43,7 @@ public sealed class TestTokenFactory(TestSigningKeys keys)
             NotBefore = expiresAt.AddMinutes(-10),
             Expires = expiresAt,
             Claims = claims,
-            SigningCredentials = signingCredentials ?? keys.SigningCredentials,
+            SigningCredentials = signingCredentials ?? _keys.SigningCredentials,
         };
 
         return new JsonWebTokenHandler().CreateToken(descriptor);
