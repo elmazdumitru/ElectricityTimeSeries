@@ -1,18 +1,22 @@
 namespace ElectricityTimeSeries.Core.Domain;
 
 /// <summary>The business rules a time series must follow.</summary>
-public static class TimeSeriesRules
+internal static class TimeSeriesRules
 {
-    /// <summary>The supported resolutions: 15 minutes (the Nordic market time unit) and 1 hour.</summary>
-    public static IReadOnlyList<TimeSpan> SupportedResolutions { get; } = [TimeSpan.FromMinutes(15), TimeSpan.FromHours(1)];
+    private const double SupportedResolution15Minutes = 15;
+    private const double SupportedResolution60Minutes = 60;
 
-    /// <summary>One year of 15-minute values (a leap year has 366 × 96 = 35,136).</summary>
-    public const int MaxPoints = 35_136;
+    private static bool IsSupportedResolution(this TimeSpan timeSpan) => timeSpan.TotalMinutes is
+        SupportedResolution15Minutes or
+        SupportedResolution60Minutes;
 
-    /// <summary>Stops reporting point errors after this many, so a bad upload can't produce a huge response.</summary>
-    private const int MaxPointErrors = 10;
+    // A leap year's worth of 15 minute intervals.
+    private const int MaxPoints = 366 * 24 * (60 / 15);
 
-    internal static void Validate(TimeSeriesDefinition definition)
+    // Stops reporting point errors after this many, so a bad upload can't produce a huge response.
+    private const int MaxPointErrors = 50;
+
+    public static void Validate(TimeSeriesDefinition definition)
     {
         var errors = new ValidationErrors();
 
@@ -21,22 +25,18 @@ public static class TimeSeriesRules
             errors.Add("type", "Unknown time series type.");
         }
 
-        if (!BiddingZones.IsKnown(definition.BiddingZone))
+        if (!definition.BiddingZone.IsKnown)
         {
-            errors.Add("biddingZone", $"Unknown bidding zone. Known zones: {string.Join(", ", BiddingZones.All)}.");
+            errors.Add("biddingZone", $"Unknown bidding zone. Known zones: {BiddingZone.ConcatenatedKnownZones}.");
         }
 
-        if (definition.Type == TimeSeriesType.CrossBorderFlow)
+        if (definition.Type is TimeSeriesType.CrossBorderFlow)
         {
-            if (string.IsNullOrWhiteSpace(definition.ToBiddingZone))
+            if (definition.ToBiddingZone is not { IsKnown: true })
             {
-                errors.Add("toBiddingZone", "A cross-border flow needs the receiving bidding zone.");
+                errors.Add("toBiddingZone", $"A cross-border flow needs a known receiving bidding zone. Known zones: {BiddingZone.ConcatenatedKnownZones}.");
             }
-            else if (!BiddingZones.IsKnown(definition.ToBiddingZone))
-            {
-                errors.Add("toBiddingZone", "Unknown bidding zone.");
-            }
-            else if (string.Equals(definition.BiddingZone?.Trim(), definition.ToBiddingZone.Trim(), StringComparison.OrdinalIgnoreCase))
+            else if (definition.BiddingZone == definition.ToBiddingZone)
             {
                 errors.Add("toBiddingZone", "A cross-border flow must go to a different bidding zone.");
             }
@@ -46,7 +46,7 @@ public static class TimeSeriesRules
             errors.Add("toBiddingZone", "Only cross-border flows have a receiving bidding zone.");
         }
 
-        var resolutionIsValid = SupportedResolutions.Contains(definition.Resolution);
+        var resolutionIsValid = definition.Resolution.IsSupportedResolution();
         if (!resolutionIsValid)
         {
             errors.Add("resolution", "Supported resolutions are 15 minutes (PT15M) and 1 hour (PT1H).");
@@ -57,12 +57,11 @@ public static class TimeSeriesRules
         errors.ThrowIfAny();
     }
 
-
-    private static void ValidatePoints(TimeSeriesDefinition definition, bool resolutionIsValid, ValidationErrors errors)
+    private static void ValidatePoints(TimeSeriesDefinition definition, bool checkTimeSpans, ValidationErrors errors)
     {
         var points = definition.Points;
 
-        if (points is null || points.Count == 0)
+        if (points is not { Count: > 0 })
         {
             errors.Add("points", "At least one point is required.");
             return;
@@ -74,7 +73,38 @@ public static class TimeSeriesRules
             return;
         }
 
-        var pointErrors = 0;
+        int pointErrors = 0;
+
+        for (int i = 0; i < points.Count; i++)
+        {
+            var point = points[i];
+
+            if (definition.Type is not TimeSeriesType.CrossBorderFlow && point.Value < 0)
+            {
+                if (AddPointError(i, "value", "Production and consumption can't be negative."))
+                {
+                    return;
+                }
+            }
+
+            if (checkTimeSpans)
+            {
+                if (point.Timestamp.UtcTicks % definition.Resolution.Ticks is not 0)
+                {
+                    if (AddPointError(i, "timestamp", $"Must start on a {definition.Resolution.TotalMinutes:0}-minute boundary."))
+                    {
+                        return;
+                    }
+                }
+                else if (i > 0 && point.Timestamp - points[i - 1].Timestamp != definition.Resolution)
+                {
+                    if (AddPointError(i, "timestamp", "Must follow the previous point by exactly one resolution step (no gaps, duplicates or reordering)."))
+                    {
+                        return;
+                    }
+                }
+            }
+        }
 
         bool AddPointError(int index, string field, string message)
         {
@@ -87,39 +117,6 @@ public static class TimeSeriesRules
             pointErrors++;
 
             return pointErrors >= MaxPointErrors;
-        }
-
-        for (var i = 0; i < points.Count; i++)
-        {
-            var point = points[i];
-
-            if (definition.Type != TimeSeriesType.CrossBorderFlow && point.Value < 0)
-            {
-                if (AddPointError(i, "value", "Production and consumption can't be negative."))
-                {
-                    return;
-                }
-            }
-
-            if (!resolutionIsValid)
-            {
-                continue;
-            }
-
-            if (point.Timestamp.UtcTicks % definition.Resolution.Ticks != 0)
-            {
-                if (AddPointError(i, "timestamp", $"Must start on a {definition.Resolution.TotalMinutes:0}-minute boundary."))
-                {
-                    return;
-                }
-            }
-            else if (i > 0 && point.Timestamp - points[i - 1].Timestamp != definition.Resolution)
-            {
-                if (AddPointError(i, "timestamp", "Must follow the previous point by exactly one resolution step (no gaps, duplicates or reordering)."))
-                {
-                    return;
-                }
-            }
         }
     }
 }

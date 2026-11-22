@@ -19,10 +19,10 @@ public sealed class TimeSeries
 
     public TimeSeriesType Type { get; private set; }
 
-    public string BiddingZone { get; private set; } = null!;
+    public BiddingZone BiddingZone { get; private set; } = null!;
 
     /// <summary>The receiving zone of a cross-border flow; empty for production and consumption.</summary>
-    public string? ToBiddingZone { get; private set; }
+    public BiddingZone? ToBiddingZone { get; private set; }
 
     /// <summary>How long each point lasts.</summary>
     public TimeSpan Resolution { get; private set; }
@@ -61,8 +61,8 @@ public sealed class TimeSeries
         TimeSeriesRules.Validate(definition);
 
         Type = definition.Type;
-        BiddingZone = BiddingZones.Normalize(definition.BiddingZone);
-        ToBiddingZone = definition.ToBiddingZone is null ? null : BiddingZones.Normalize(definition.ToBiddingZone);
+        BiddingZone = definition.BiddingZone;
+        ToBiddingZone = definition.ToBiddingZone;
         Resolution = definition.Resolution;
 
         _points.Clear();

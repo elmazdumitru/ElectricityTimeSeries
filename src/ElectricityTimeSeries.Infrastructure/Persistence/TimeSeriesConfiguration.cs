@@ -17,8 +17,14 @@ internal sealed class TimeSeriesConfiguration : IEntityTypeConfiguration<TimeSer
         builder.Property(s => s.Id).ValueGeneratedNever();
 
         builder.Property(s => s.Type).HasConversion<string>().HasMaxLength(32);
-        builder.Property(s => s.BiddingZone).HasMaxLength(16).IsRequired();
-        builder.Property(s => s.ToBiddingZone).HasMaxLength(16);
+        // Bidding zones are stored as their text code.
+        builder.Property(s => s.BiddingZone)
+            .HasConversion(zone => zone.Value, code => BiddingZone.From(code))
+            .HasMaxLength(16)
+            .IsRequired();
+        builder.Property(s => s.ToBiddingZone)
+            .HasConversion(zone => zone!.Value, code => BiddingZone.From(code))
+            .HasMaxLength(16);
 
         // The columns used by searches.
         builder.HasIndex(s => new { s.BiddingZone, s.Start, s.End });

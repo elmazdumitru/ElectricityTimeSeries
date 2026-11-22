@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using ElectricityTimeSeries.Api.Authorization;
 using ElectricityTimeSeries.Api.ErrorHandling;
+using ElectricityTimeSeries.Api.OpenApi;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
 using ElectricityTimeSeries.Core;
 using ElectricityTimeSeries.Infrastructure;
@@ -24,7 +25,7 @@ builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<DomainValidationExceptionHandler>();
 builder.Services.AddHealthChecks();
 
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options => options.AddSchemaTransformer<BiddingZoneSchemaTransformer>());
 
 var app = builder.Build();
 

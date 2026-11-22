@@ -7,7 +7,8 @@ namespace ElectricityTimeSeries.Api.Contracts;
 public sealed class TimeSeriesQuery
 {
     /// <summary>Series in this zone, including flows into or out of it.</summary>
-    public string? BiddingZone { get; init; }
+    /// <remarks>Read from the URL through <see cref="BiddingZone.TryParse"/>.</remarks>
+    public BiddingZone? BiddingZone { get; init; }
 
     public TimeSeriesType? Type { get; init; }
 
