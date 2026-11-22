@@ -1,0 +1,26 @@
+# Local development: the API only, in the Development environment, using tokens from dotnet user-jwts.
+#
+#   docker compose up --detach --build
+#   docker compose down
+#
+# The API is available at http://localhost:5020 (OpenAPI document at /openapi/v1.json).
+
+name: electricity-timeseries-local
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+    ports:
+      # Same host port as the "http" launch profile, so tokens from dotnet user-jwts
+      # (whose audiences include http://localhost:5020) are accepted.
+      - "5020:8080"
+    volumes:
+      # The signing key created by dotnet user-jwts lives in the host's user secrets. In Development,
+      # the API reads user secrets from ~/.microsoft/usersecrets, so the host folder is mounted there.
+      # Windows: %APPDATA%\Microsoft\UserSecrets (the default below).
+      # Linux/macOS: set USER_SECRETS_PATH=~/.microsoft/usersecrets before running docker compose.
+      - ${USER_SECRETS_PATH:-${APPDATA}/Microsoft/UserSecrets}:/home/app/.microsoft/usersecrets:ro

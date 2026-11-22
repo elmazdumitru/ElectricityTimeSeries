@@ -4,4 +4,8 @@
     <Project Path="src/ElectricityTimeSeries.Core/ElectricityTimeSeries.Core.csproj" />
     <Project Path="src/ElectricityTimeSeries.Infrastructure/ElectricityTimeSeries.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ElectricityTimeSeries.Api.IntegrationTests/ElectricityTimeSeries.Api.IntegrationTests.csproj" />
+    <Project Path="tests/ElectricityTimeSeries.UnitTests/ElectricityTimeSeries.UnitTests.csproj" />
+  </Folder>
 </Solution>

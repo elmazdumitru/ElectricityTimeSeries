@@ -2,20 +2,53 @@
 
 A small REST API built with C# and ASP.NET Core for managing electricity market time series data, such as production, consumption and cross-border flows between bidding zones.
 
-> **Status:** the solution structure and architecture are in place. The domain model, CRUD endpoints, storage and automated tests are in progress.
+> **Status:** the architecture, authentication and authorization, test projects and CI are in place. The domain model, CRUD endpoints and storage are in progress.
 
 ## Requirements
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download) (pinned in `global.json`, rolls forward to the latest 10.0 feature band)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download) (`global.json` requires 10.0.100 or any later 10.0 SDK)
+- [Docker](https://www.docker.com/) with Docker Compose, optional: only for running the API in a container
 
 ## Running the API
 
 ```powershell
-dotnet build
-dotnet run --project src/ElectricityTimeSeries.Api
+dotnet run --project src/ElectricityTimeSeries.Api --launch-profile https
 ```
 
-In the Development environment, the OpenAPI document is served at `/openapi/v1.json`.
+The API listens on `https://localhost:7244` and `http://localhost:5020`. In Visual Studio, select the `https` or `http` launch profile.
+
+### Running in Docker
+
+`docker-compose.yml` runs the API in a container, in the `Development` environment, at `http://localhost:5020`:
+
+```powershell
+docker compose up --detach --build
+docker compose down
+```
+
+The container uses the same tokens as `dotnet run`: the host's user secrets folder, which holds the `dotnet user-jwts` signing key, is mounted read-only into the container. On Windows this works as is. On Linux or macOS, set `USER_SECRETS_PATH=~/.microsoft/usersecrets` first. Port 5020 is shared with the `http` launch profile, so stop one before starting the other.
+
+In the Development environment, the OpenAPI document is served at `/openapi/v1.json`. A health endpoint is available at `/health`. Both are anonymous; every other endpoint requires a bearer token (see below).
+
+### Getting a token for local development
+
+The API uses JWT bearer tokens. Locally, tokens are issued by the [`dotnet user-jwts`](https://learn.microsoft.com/aspnet/core/security/authentication/jwt-authn) tool that ships with the .NET SDK, so no identity server is needed. The signing key is stored in your user secrets and the matching issuer/audience settings are already in `appsettings.Development.json`.
+
+```powershell
+# Token with full access (read + write)
+dotnet user-jwts create --project src/ElectricityTimeSeries.Api --name dev-user --scope TimeSeries.Read --scope TimeSeries.Write
+
+# Read-only token
+dotnet user-jwts create --project src/ElectricityTimeSeries.Api --name reader --scope TimeSeries.Read
+```
+
+Send the printed token in the `Authorization` header:
+
+```
+Authorization: Bearer <token>
+```
+
+User secrets are per machine, so each developer runs the commands above once after cloning.
 
 ## Solution structure
 
@@ -23,10 +56,16 @@ In the Development environment, the OpenAPI document is served at `/openapi/v1.j
 ElectricityTimeSeries/
 ├── ElectricityTimeSeries.slnx
 ├── global.json
-└── src/
-    ├── ElectricityTimeSeries.Api/             Presentation: controllers, request/response contracts, startup wiring
-    ├── ElectricityTimeSeries.Core/            Domain + application: entities, business rules, services, abstractions
-    └── ElectricityTimeSeries.Infrastructure/  Data access: storage and repository implementations
+├── Dockerfile                                 API container image
+├── docker-compose.yml                         API in a container, for local development
+├── .github/workflows/ci.yml                   GitHub Actions pipeline
+├── src/
+│   ├── ElectricityTimeSeries.Api/             Presentation: controllers, request/response contracts, startup wiring
+│   ├── ElectricityTimeSeries.Core/            Domain + application: entities, business rules, services, abstractions
+│   └── ElectricityTimeSeries.Infrastructure/  Data access: storage and repository implementations
+└── tests/
+    ├── ElectricityTimeSeries.UnitTests/               Isolated logic: business rules, authorization handler
+    └── ElectricityTimeSeries.Api.IntegrationTests/    The API hosted in memory, with a fake identity provider
 ```
 
 ## Architecture
@@ -52,9 +91,55 @@ The solution follows **Clean Architecture** principles, built on the **Dependenc
 - **Each layer registers its own services** through an extension method (`AddCore()`, `AddInfrastructure()`), which keeps `Program.cs` short and keeps each layer's internals private.
 - **API contracts are separate from domain entities.** Request and response classes live in the Api project, so the public HTTP contract can change independently of the domain model and the storage model.
 - **Consistent error responses.** Errors are returned as RFC 9457 Problem Details (`AddProblemDetails`, `UseExceptionHandler`, `UseStatusCodePages`).
+- **Authentication and authorization live in the Api layer.** They are HTTP concerns, so Core and Infrastructure stay unaware of them (see [Security](#security)).
 - **Simplified layering.** A full Clean Architecture template usually splits Core into separate Domain and Application projects. Given the scope of this API, they are merged into a single Core project, which keeps the solution easy to navigate while preserving the dependency rule.
+
+## Security
+
+**Authentication** uses JWT bearer tokens (`Microsoft.AspNetCore.Authentication.JwtBearer`). The API validates each token's signature, issuer, audience and lifetime. Bearer options are bound from the `Authentication:Schemes:Bearer` configuration section, so moving from `dotnet user-jwts` to a real identity provider (Microsoft Entra ID, Keycloak, Auth0, …) is a configuration change only: set `Authority` and `ValidAudiences` for that provider.
+
+**Authorization** is policy-based, driven by scopes in the token:
+
+| Policy | Required scope | Applies to |
+|---|---|---|
+| `CanReadTimeSeries` | `TimeSeries.Read` | `GET` endpoints |
+| `CanWriteTimeSeries` | `TimeSeries.Write` | `POST`, `PUT`, `DELETE` endpoints |
+
+- **Scopes and policies are separate concepts.** Scopes (`Scopes`) are the identity provider's contract: the exact values issued in tokens. Policies (`Policies`) are the API's own authorization rules, which controllers reference with `[Authorize(Policy = ...)]`. A policy can later combine several requirements (for example a scope plus a role), or follow a renamed scope, without touching any controller.
+- **Scope checks use a requirement and a handler**, the same pattern as the framework's built-in checks: `ScopeRequirement` states which scope is needed, and `ScopeAuthorizationHandler` (resolved from DI) evaluates it. The rule is defined once, reused by every policy, and unit testable without hosting the API.
+- Read and write are separate because most consumers of market data (monitoring, analysis) only read, while only data-producing systems should change it. A token needs both scopes for full access.
+- A **fallback policy** requires an authenticated caller on every endpoint by default. Anonymous endpoints (`/health`, the OpenAPI document) must opt out explicitly, so a new endpoint can't be exposed by accident.
+- Scopes are read from the `scope` claim (OAuth 2.0 standard, used by `dotnet user-jwts`) and the `scp` claim (Microsoft Entra ID), including space-separated values.
+- A missing or invalid token returns `401 Unauthorized`; a valid token without the required scope returns `403 Forbidden`. Both use the Problem Details format.
+
+## Testing
+
+The tests are split into two levels. Neither needs Docker, an identity provider or any local setup.
+
+| Level | What it runs against | Tokens |
+|---|---|---|
+| **Unit** | Isolated classes: business rules, `HasScope()`, `ScopeAuthorizationHandler` | none |
+| **Integration** | The full API hosted in memory with `WebApplicationFactory`, called over HTTP | signed by the test project with its own key pair |
+
+```powershell
+dotnet test
+```
+
+### Integration tests
+
+- The API runs in a dedicated `Testing` environment, so user secrets and `appsettings.Development.json` are never loaded. The tests behave the same on every machine and in CI.
+- The API is set up **as it is delivered**: it trusts an identity provider (`Authority` plus audience) and downloads that provider's public keys when it needs them. The only test-specific setting is where those downloads go: `FakeIdentityProvider`, which answers them inside the test process.
+- Each test run creates a **public/private key pair** (`TestSigningKeys`). `TestTokenFactory` signs tokens with the private key; the API only ever sees the public key, published by the fake identity provider in the same format Keycloak or Entra ID use. Nothing secret is shared between the tests and the API.
+- Requests go through the API's real token checks, so the tests also cover expired, wrongly addressed, wrongly signed and tampered tokens, and the trick of signing with the public key as if it were a password.
+- Authorization is tested through test-only endpoints (`AuthorizationProbeController`) that use the real policies. They are added only inside the test host and never ship with the API.
+
+**Not covered by the integration tests:** the network connection to a real identity provider (its address, HTTPS, and the provider's own setup).
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `main` and on every pull request. It restores and builds in Release, runs the unit and integration tests, and uploads the test results.
 
 ## Assumptions
 
-- The API is a self-contained service without authentication or authorization; these are out of scope for the case.
+- Access is granted per scope (read/write) for all time series. Finer-grained rules, such as restricting a client to specific bidding zones, are out of scope.
 - Further assumptions about the data model (time resolution, units, time zones) will be documented here as the model is implemented.
