@@ -9,7 +9,7 @@ namespace ElectricityTimeSeries.Core.Abstractions;
 /// <param name="From">Matches series with data after this time (inclusive).</param>
 /// <param name="To">Matches series with data before this time (exclusive).</param>
 public sealed record TimeSeriesFilter(
-    string? BiddingZone = null,
+    BiddingZone? BiddingZone = null,
     TimeSeriesType? Type = null,
     DateTimeOffset? From = null,
     DateTimeOffset? To = null);

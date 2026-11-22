@@ -6,7 +6,7 @@ A small REST API built with C# and ASP.NET Core for managing electricity market 
 
 ## Requirements
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download) (`global.json` requires 10.0.100 or any later 10.0 SDK)
+- [.NET 11 SDK](https://dotnet.microsoft.com/download) (`global.json` requires 11.0.100 or any later 11.0 SDK)
 - [Docker](https://www.docker.com/) with Docker Compose, optional: only for running the API in a container
 
 ## Running the API
@@ -110,7 +110,12 @@ Requests that break a rule return `400 Bad Request` with the list of invalid fie
 ```
 ElectricityTimeSeries/
 ├── ElectricityTimeSeries.slnx
-├── global.json
+├── global.json                                SDK version (11.0, any later feature band)
+├── Directory.Build.props                      Settings shared by all projects (target framework, nullable, implicit usings)
+├── Directory.Build.targets                    Shared build steps (empty for now)
+├── Directory.Packages.props                   Every package version, in one place
+├── NuGet.config                               Package sources: nuget.org only
+├── .editorconfig                              Code style
 ├── Dockerfile                                 API container image
 ├── docker-compose.yml                         API in a container, for local development
 ├── .github/workflows/ci.yml                   GitHub Actions pipeline

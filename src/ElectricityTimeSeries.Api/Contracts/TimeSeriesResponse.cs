@@ -8,8 +8,8 @@ namespace ElectricityTimeSeries.Api.Contracts;
 public sealed record TimeSeriesResponse(
     Guid Id,
     TimeSeriesType Type,
-    string BiddingZone,
-    string? ToBiddingZone,
+    [property: JsonConverter(typeof(BiddingZoneJsonConverter))] BiddingZone BiddingZone,
+    [property: JsonConverter(typeof(BiddingZoneJsonConverter))] BiddingZone? ToBiddingZone,
     [property: JsonConverter(typeof(IsoDurationJsonConverter))] TimeSpan Resolution,
     DateTimeOffset Start,
     DateTimeOffset End,

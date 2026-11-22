@@ -4,7 +4,7 @@ namespace ElectricityTimeSeries.Core.Domain;
 /// <param name="ToBiddingZone">The receiving zone. Only used for <see cref="TimeSeriesType.CrossBorderFlow"/>.</param>
 public sealed record TimeSeriesDefinition(
     TimeSeriesType Type,
-    string BiddingZone,
-    string? ToBiddingZone,
+    BiddingZone BiddingZone,
+    BiddingZone? ToBiddingZone,
     TimeSpan Resolution,
     IReadOnlyList<TimeSeriesPoint> Points);

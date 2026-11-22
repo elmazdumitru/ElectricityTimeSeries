@@ -16,7 +16,7 @@ public class TimeSeriesTests
         var series = TimeSeries.Create(definition);
 
         Assert.NotEqual(Guid.Empty, series.Id);
-        Assert.Equal("NO1", series.BiddingZone);
+        Assert.Equal("NO1", series.BiddingZone.Value);
         Assert.Equal(Midnight, series.Start);
         Assert.Equal(TimeSpan.Zero, series.Start.Offset);
         Assert.Equal(Midnight.AddHours(1), series.End);
@@ -32,7 +32,7 @@ public class TimeSeriesTests
 
         var series = TimeSeries.Create(definition);
 
-        Assert.Equal("DK1", series.ToBiddingZone);
+        Assert.Equal("DK1", series.ToBiddingZone?.Value);
     }
 
     public static TheoryData<string, TimeSeriesDefinition> InvalidDefinitions => new()
@@ -62,13 +62,13 @@ public class TimeSeriesTests
     }
 
     [Fact]
-    public void Create_reports_at_most_ten_point_errors()
+    public void Create_reports_at_most_fifty_point_errors()
     {
-        var points = Enumerable.Range(0, 50).Select(i => new TimeSeriesPoint(Midnight.AddMinutes(15 * i), -1m)).ToList();
+        var points = Enumerable.Range(0, 100).Select(i => new TimeSeriesPoint(Midnight.AddMinutes(15 * i), -1m)).ToList();
 
         var exception = Assert.Throws<DomainValidationException>(() => TimeSeries.Create(Definition(points: points)));
 
-        Assert.Equal(10, exception.Errors.Count);
+        Assert.Equal(50, exception.Errors.Count);
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public class TimeSeriesTests
 
         Assert.Equal(id, series.Id);
         Assert.Equal(TimeSeriesType.Production, series.Type);
-        Assert.Equal("SE3", series.BiddingZone);
+        Assert.Equal("SE3", series.BiddingZone.Value);
         Assert.Equal(2, series.Points.Count);
         Assert.Equal(Midnight.AddHours(2), series.End);
     }
@@ -94,7 +94,7 @@ public class TimeSeriesTests
 
         Assert.Throws<DomainValidationException>(() => series.Update(Definition(zone: "XX1")));
 
-        Assert.Equal("NO1", series.BiddingZone);
+        Assert.Equal("NO1", series.BiddingZone.Value);
         Assert.Equal(4, series.Points.Count);
     }
 
@@ -123,7 +123,7 @@ public class TimeSeriesTests
         string? toZone = null,
         TimeSpan? resolution = null,
         IReadOnlyList<TimeSeriesPoint>? points = null) =>
-        new(type, zone, toZone, resolution ?? FifteenMinutes, points ?? Points(Midnight, 4));
+        new(type, BiddingZone.From(zone), toZone is null ? null : BiddingZone.From(toZone), resolution ?? FifteenMinutes, points ?? Points(Midnight, 4));
 
     private static List<TimeSeriesPoint> Points(DateTimeOffset start, int count, TimeSpan? step = null) =>
         Enumerable.Range(0, count)

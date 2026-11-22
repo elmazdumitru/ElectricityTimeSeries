@@ -174,6 +174,9 @@ public class TimeSeriesEndpointsTests : IClassFixture<ApiFactory>
         { "biddingZone", Without(Series(), "biddingZone") },
         { "resolution", Without(Series(), "resolution") },
         { "points", Without(Series(), "points") },
+        { "biddingZone", WithNull(Series(), "biddingZone") },
+        { "biddingZone", Series(zone: "   ") },
+        { "toBiddingZone", Series(type: "CrossBorderFlow", zone: "NO1", toZone: "") },
     };
 
     [Theory]
@@ -188,6 +191,7 @@ public class TimeSeriesEndpointsTests : IClassFixture<ApiFactory>
     [Theory]
     [InlineData("""{ "type": "Nuclear" }""", "$.type")]
     [InlineData("""{ "resolution": "15 minutes" }""", "$.resolution")]
+    [InlineData("""{ "biddingZone": 1 }""", "$.biddingZone")]
     [InlineData("""{ "points": [{ "timestamp": "yesterday", "value": 1 }] }""", "$.points[0].timestamp")]
     public async Task Malformed_json_returns_400_validation_problem(string json, string expectedField)
     {
@@ -325,6 +329,12 @@ public class TimeSeriesEndpointsTests : IClassFixture<ApiFactory>
     private static JsonObject Without(JsonObject body, string field)
     {
         body.Remove(field);
+        return body;
+    }
+
+    private static JsonObject WithNull(JsonObject body, string field)
+    {
+        body[field] = null;
         return body;
     }
 

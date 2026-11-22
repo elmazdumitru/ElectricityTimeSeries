@@ -17,10 +17,12 @@ public sealed class TimeSeriesRequest
 
     /// <example>NO1</example>
     [Required]
-    public string? BiddingZone { get; init; }
+    [JsonConverter(typeof(BiddingZoneJsonConverter))]
+    public BiddingZone? BiddingZone { get; init; }
 
     /// <summary>The receiving zone. Only for cross-border flows.</summary>
-    public string? ToBiddingZone { get; init; }
+    [JsonConverter(typeof(BiddingZoneJsonConverter))]
+    public BiddingZone? ToBiddingZone { get; init; }
 
     /// <summary>How long each point lasts, as an ISO 8601 duration: PT15M or PT1H.</summary>
     /// <example>PT15M</example>

@@ -1,4 +1,12 @@
 <Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Build.targets" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+    <File Path="NuGet.config" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/ElectricityTimeSeries.Api/ElectricityTimeSeries.Api.csproj" />
     <Project Path="src/ElectricityTimeSeries.Core/ElectricityTimeSeries.Core.csproj" />

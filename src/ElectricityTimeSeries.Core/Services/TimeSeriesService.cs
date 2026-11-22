@@ -36,9 +36,9 @@ public sealed class TimeSeriesService
     {
         var errors = new ValidationErrors();
 
-        if (filter.BiddingZone is not null && !BiddingZones.IsKnown(filter.BiddingZone))
+        if (filter.BiddingZone is { IsKnown: false })
         {
-            errors.Add("biddingZone", "Unknown bidding zone.");
+            errors.Add("biddingZone", $"Unknown bidding zone. Known zones: {BiddingZone.ConcatenatedKnownZones}.");
         }
 
         if (filter.Type is { } type && !Enum.IsDefined(type))
@@ -55,7 +55,6 @@ public sealed class TimeSeriesService
 
         var normalized = filter with
         {
-            BiddingZone = filter.BiddingZone is null ? null : BiddingZones.Normalize(filter.BiddingZone),
             From = filter.From?.ToUniversalTime(),
             To = filter.To?.ToUniversalTime(),
         };
