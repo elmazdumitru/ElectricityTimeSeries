@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+using ElectricityTimeSeries.Api.Json;
 using ElectricityTimeSeries.Core.Domain;
 
 namespace ElectricityTimeSeries.Api.Contracts;
@@ -8,7 +10,7 @@ public sealed record TimeSeriesResponse(
     TimeSeriesType Type,
     BiddingZone BiddingZone,
     BiddingZone? ToBiddingZone,
-    TimeSpan Resolution,
+    [property: JsonConverter(typeof(IsoDurationJsonConverter))] TimeSpan Resolution,
     DateTimeOffset Start,
     DateTimeOffset End,
     IReadOnlyList<TimeSeriesPointResponse> Points)

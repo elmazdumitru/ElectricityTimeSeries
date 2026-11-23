@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
+using System.Text.Json.Serialization;
+using ElectricityTimeSeries.Api.Json;
 using ElectricityTimeSeries.Core.Domain;
 
 namespace ElectricityTimeSeries.Api.Contracts;
@@ -20,6 +22,7 @@ public sealed class TimeSeriesRequest
 
     /// <summary>How long each point lasts, as an ISO 8601 duration: PT15M or PT1H.</summary>
     [Required]
+    [JsonConverter(typeof(IsoDurationJsonConverter))]
     public TimeSpan? Resolution { get; init; }
 
     [Required]
