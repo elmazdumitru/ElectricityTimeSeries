@@ -4,14 +4,6 @@
     <UserSecretsId>3a30226b-9ff0-46e0-b14e-4b40d60300b1</UserSecretsId>
   </PropertyGroup>
 
-  <PropertyGroup Label="Visual Studio container profile">
-    <!-- The Dockerfile sits at the repository root and builds from there. -->
-    <DockerfileContext>..\..</DockerfileContext>
-    <DockerfileFile>..\..\Dockerfile</DockerfileFile>
-    <!-- The Dockerfile has no "base" stage; Visual Studio's fast mode runs on the "runtime" stage instead. -->
-    <DockerfileFastModeStage>runtime</DockerfileFastModeStage>
-  </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />

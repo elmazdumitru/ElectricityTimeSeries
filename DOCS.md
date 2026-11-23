@@ -18,7 +18,7 @@ This is everything about the API. To get it running quickly from Visual Studio, 
 ## Requirements
 
 - [.NET 11 SDK](https://dotnet.microsoft.com/download) (`global.json` requires 11.0.100 or any later 11.0 SDK)
-- [Docker](https://www.docker.com/) with Docker Compose, optional: for running the API in a container, and for running the integration tests against SQL Server
+- [Docker](https://www.docker.com/) with Docker Compose, optional: for running the API on SQL Server in containers, and for running the integration tests against SQL Server
 - An x64 (Intel or AMD) processor for anything with SQL Server: its Docker image doesn't run on ARM processors yet, so on ARM, run the API on your machine, in memory
 
 ## Running the API
@@ -28,10 +28,9 @@ Each way of running the API has its own port, so they can all run at the same ti
 | How it's started | Address |
 |---|---|
 | On your machine: `dotnet run`, or the `http` / `https` launch profile | `http://localhost:5021`, `https://localhost:7244` |
-| `docker compose up` | `http://localhost:5020` |
-| Visual Studio's `Container (Dockerfile)` launch profile | `http://localhost:5022` |
+| In Docker, on SQL Server: `./scripts/Start-SqlServer.ps1` | `http://localhost:5020` |
 
-The same `dotnet user-jwts` tokens work with `dotnet run` and `docker compose`.
+The same `dotnet user-jwts` tokens work on your machine and in Docker.
 
 ### On your machine
 
@@ -47,24 +46,27 @@ Then run the API from the command line:
 dotnet run --project src/ElectricityTimeSeries.Api --launch-profile https
 ```
 
-In Visual Studio, pick `https` or `http` in the launch profile dropdown next to the Run button and press F5. F5 always runs the selected profile, so with `Container (Dockerfile)` selected it runs in Docker instead.
+In Visual Studio, pick `https` or `http` in the launch profile dropdown next to the Run button and press F5.
 
 Both launch profiles run in the `Development` environment: the OpenAPI document is served, tokens from `dotnet user-jwts` are accepted (see [Getting a token](#getting-a-token-for-local-development)), and data is kept in memory, so it's gone when the API stops. To keep it, see [Using SQL Server](#using-sql-server).
 
 ### In Docker
 
-`docker-compose.yml` runs the API in a container, in the `Development` environment with in-memory storage, at `http://localhost:5020`, next to the [Aspire dashboard](#logs-traces-and-metrics):
+Docker is only used for SQL Server. `docker-compose.yml` runs the API in a container, in the `Development` environment, at `http://localhost:5020`, stored in SQL Server, next to the [Aspire dashboard](#logs-traces-and-metrics). A script starts it all and waits until the API answers:
 
 ```powershell
-docker compose up --detach --build
-docker compose down
+# -Fresh starts SQL Server empty
+./scripts/Start-SqlServer.ps1
 ```
 
-To run it on SQL Server instead, there's a script for each mode: see [Storage in Docker](#storage-in-docker).
+To stop it: `docker compose down --remove-orphans`.
+
+- Before the API starts, a one-off `migrations` container creates or updates the tables. It runs a small program that EF Core builds from the migrations (the `migrations` stage of the `Dockerfile`).
+- The data survives restarts, until `-Fresh` deletes it.
+- SQL Server Management Studio or similar can connect from this machine to `localhost,14330`, user `sa`, password `Local-dev-1`. That password only exists in this local container.
+- A collector container reads SQL Server's own metrics (connections, requests per second, lock waits, cache) and its most expensive queries of the last minute, and passes them on to the dashboard, where they show up as `sqlserver`. Its settings are in `otel-collector.yaml`.
 
 The container uses the same tokens as `dotnet run`: the host's user secrets folder, which holds the `dotnet user-jwts` signing key, is mounted read-only into the container.
-
-In Visual Studio, the `Container (Dockerfile)` launch profile builds the same `Dockerfile` and runs it at `http://localhost:5022`.
 
 ### Using SQL Server
 
@@ -108,7 +110,7 @@ User secrets are per machine, so each developer runs the commands above once aft
 
 ### Trying the API from Visual Studio
 
-`src/ElectricityTimeSeries.Api/ElectricityTimeSeries.Api.http` has a request for every endpoint and the common errors. Its environments (`local` for the `https` launch profile, `local-http` for the `http` one, `docker` for `docker compose`) are in `http-client.env.json` and read the token from your user secrets, so nothing secret is committed. Store a token there once:
+`src/ElectricityTimeSeries.Api/ElectricityTimeSeries.Api.http` has a request for every endpoint and the common errors. Its environments (`local` for the `https` launch profile, `local-http` for the `http` one, `docker` for Docker) are in `http-client.env.json` and read the token from your user secrets, so nothing secret is committed. Store a token there once:
 
 ```powershell
 ./scripts/New-DevToken.ps1
@@ -116,42 +118,23 @@ User secrets are per machine, so each developer runs the commands above once aft
 
 Then pick the environment above the `.http` file and send requests. Tokens last about three months (or pass `-ValidFor 365d`); run the script again when requests start returning `401`. It prints when the new token expires.
 
-Here it's pointed at `docker compose`, and a new production series has just come back as `201 Created`:
+Here it's pointed at Docker, and a new production series has just come back as `201 Created`:
 
 ![The .http file in Visual Studio with the docker environment selected, and a 201 Created response for a new production series](docs/screenshots/visual-studio-http-file.png)
-
-### Storage in Docker
-
-Two scripts start everything in Docker and wait until the API answers. Either one switches over from the other:
-
-```powershell
-# In memory, like docker compose up
-./scripts/Start-InMemory.ps1
-
-# Stored in SQL Server (-Fresh starts it empty)
-./scripts/Start-SqlServer.ps1
-```
-
-To stop either one: `docker compose down --remove-orphans`.
-
-- `Start-SqlServer.ps1` adds `docker-compose.sqlserver.yml`, which adds SQL Server and switches the API to it. Before the API starts, a one-off `migrations` container creates or updates the tables. It runs a small program that EF Core builds from the migrations (the `migrations` stage of the `Dockerfile`).
-- The data survives restarts, until `-Fresh` deletes it.
-- SQL Server Management Studio or similar can connect from this machine to `localhost,14330`, user `sa`, password `Local-dev-1`. That password only exists in this local container.
-- A collector container reads SQL Server's own metrics (connections, requests per second, lock waits, cache) and its most expensive queries of the last minute, and passes them on to the dashboard, where they show up as `sqlserver`. Its settings are in `otel-collector.yaml`.
 
 ### Logs, traces and metrics
 
 The API sends its logs, traces and metrics through OpenTelemetry, but only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Locally they go to the Aspire dashboard, which runs as a container:
 
-- `docker compose up` starts the dashboard next to the API. Open `http://localhost:18888`; there's no login, since it only listens on this machine.
-- `dotnet run`, F5 and the `Container (Dockerfile)` profile send to the same dashboard. To start only the dashboard: `docker compose up dashboard --detach`.
+- `Start-SqlServer.ps1` starts the dashboard next to the API. Open `http://localhost:18888`; there's no login, since it only listens on this machine.
+- `dotnet run` and F5 send to the same dashboard. To start only the dashboard: `docker compose up dashboard --detach`.
 - If the dashboard isn't running, nothing breaks; the telemetry is just dropped.
 
 A trace shows the request, the service and repository calls inside it, and each save; on SQL Server, the SQL calls too. Here's a `PUT` with the API running on SQL Server in Docker. The popup is one of EF Core's log lines, attached to the step it came from:
 
 ![A PUT request traced in the Aspire dashboard: TimeSeriesService.Update, then TimeSeriesRepository.Get with its SELECT, and TimeSeriesRepository.Update with SaveChanges and its UPDATE on SQL Server](docs/screenshots/aspire-dashboard-trace.webp)
 
-- With [SQL Server in Docker](#storage-in-docker), SQL Server's own metrics and most expensive queries show up as well.
+- With [SQL Server in Docker](#in-docker), SQL Server's own metrics and most expensive queries show up as well.
 - Every request is traced, even when the caller asks not to (Visual Studio's HTTP client does). `/health` calls are left out.
 - In Development, metrics go out every 5 seconds (`OTEL_METRIC_EXPORT_INTERVAL`), instead of every minute.
 - The tests and CI send nothing. One integration test (`TelemetryTests`) catches the API's traces in memory, to make sure they keep being produced.
@@ -232,12 +215,10 @@ ElectricityTimeSeries/
 ├── .editorconfig                              Code style
 ├── dotnet-tools.json                          Local tools: dotnet-ef, for migrations
 ├── Dockerfile                                 API container image
-├── docker-compose.yml                         API in a container, for local development
-├── docker-compose.sqlserver.yml               The same, stored in SQL Server
+├── docker-compose.yml                         API, SQL Server and the dashboard in containers, for local development
 ├── otel-collector.yaml                        Passes SQL Server's metrics to the dashboard
 ├── .github/workflows/ci.yml                   GitHub Actions pipeline
 ├── scripts/New-DevToken.ps1                   Stores a development token for the .http file
-├── scripts/Start-InMemory.ps1                 Runs the API in Docker, in memory
 ├── scripts/Start-SqlServer.ps1                Runs the API in Docker, on SQL Server
 ├── docs/architecture.svg                      The architecture diagram below
 ├── docs/screenshots/                          The screenshots in these docs

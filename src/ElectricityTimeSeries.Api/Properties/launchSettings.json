@@ -20,18 +20,6 @@
         "ASPNETCORE_ENVIRONMENT": "Development",
         "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317"
       }
-    },
-    "Container (Dockerfile)": {
-      "commandName": "Docker",
-      "launchBrowser": false,
-      "launchUrl": "{Scheme}://{ServiceHost}:{ServicePort}/health",
-      "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development",
-        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://host.docker.internal:4317"
-      },
-      "httpPort": 5022,
-      "useSSL": false,
-      "publishAllPorts": false
     }
   }
 }
