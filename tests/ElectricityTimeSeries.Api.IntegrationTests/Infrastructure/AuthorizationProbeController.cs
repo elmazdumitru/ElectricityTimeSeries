@@ -4,10 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace ElectricityTimeSeries.Api.IntegrationTests.Infrastructure;
 
-/// <summary>
-/// Test-only endpoints that exercise the API's real authorization policies independently of
-/// any business endpoint. Registered only in <see cref="ApiFactory"/>.
-/// </summary>
+/// <summary>Test-only endpoints for checking the real authorization policies. Added only in <see cref="ApiFactory"/>.</summary>
 [ApiController]
 [Route("test/authorization")]
 public class AuthorizationProbeController : ControllerBase

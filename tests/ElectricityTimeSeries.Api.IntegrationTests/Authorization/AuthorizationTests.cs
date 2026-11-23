@@ -7,7 +7,8 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace ElectricityTimeSeries.Api.IntegrationTests.Authorization;
 
-public class AuthorizationTests : IClassFixture<ApiFactory>
+/// <summary>These tests store nothing, so they share one API (see <see cref="SharedApiFixture"/>).</summary>
+public class AuthorizationTests : IClassFixture<SharedApiFixture>
 {
     private const string ReadUrl = "test/authorization/read";
     private const string WriteUrl = "test/authorization/write";
@@ -17,17 +18,19 @@ public class AuthorizationTests : IClassFixture<ApiFactory>
     private readonly HttpClient _client;
     private readonly TestTokenFactory _tokens;
 
-    public AuthorizationTests(ApiFactory factory)
+    public AuthorizationTests(SharedApiFixture fixture)
     {
-        _factory = factory;
-        _client = factory.CreateClient();
-        _tokens = factory.Tokens;
+        _factory = fixture.Api;
+        _client = _factory.CreateClient();
+        _tokens = _factory.Tokens;
     }
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
     public async Task Health_endpoint_allows_anonymous_access()
     {
-        var response = await _client.GetAsync("health");
+        var response = await _client.GetAsync("health", Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -35,7 +38,7 @@ public class AuthorizationTests : IClassFixture<ApiFactory>
     [Fact]
     public async Task Fallback_policy_rejects_anonymous_requests_to_endpoints_without_a_policy()
     {
-        var response = await _client.GetAsync(NoPolicyUrl);
+        var response = await _client.GetAsync(NoPolicyUrl, Ct);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
@@ -51,7 +54,7 @@ public class AuthorizationTests : IClassFixture<ApiFactory>
     [Fact]
     public async Task Missing_token_returns_401_with_bearer_challenge()
     {
-        var response = await _client.GetAsync(ReadUrl);
+        var response = await _client.GetAsync(ReadUrl, Ct);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Contains(response.Headers.WwwAuthenticate, header => header.Scheme == "Bearer");
@@ -153,13 +156,10 @@ public class AuthorizationTests : IClassFixture<ApiFactory>
     {
         var request = new HttpRequestMessage(method, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        return _client.SendAsync(request);
+        return _client.SendAsync(request, Ct);
     }
 
-    /// <summary>
-    /// Rewrites the token's payload to also grant the write scope while keeping the original
-    /// signature, simulating a client that tries to escalate its own privileges.
-    /// </summary>
+    /// <summary>Adds the write scope to the payload but keeps the original signature.</summary>
     private static string WithEscalatedScope(string token)
     {
         var parts = token.Split('.');
