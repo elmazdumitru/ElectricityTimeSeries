@@ -1,3 +1,4 @@
+using ElectricityTimeSeries.Api.Authorization.Enforcement;
 using ElectricityTimeSeries.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
@@ -12,6 +13,7 @@ namespace ElectricityTimeSeries.Api.IntegrationTests.Infrastructure;
 public class ApiFactory : WebApplicationFactory<Program>
 {
     private readonly TestDatabase _database;
+    private readonly string _ledgerDirectory = Path.Combine(Path.GetTempPath(), "electricity-timeseries-tests", Guid.NewGuid().ToString("N"));
 
     public ApiFactory(TestDatabase database)
     {
@@ -25,6 +27,17 @@ public class ApiFactory : WebApplicationFactory<Program>
     public FakeIdentityProvider IdentityProvider { get; }
 
     public TestTokenFactory Tokens { get; }
+
+    private string LedgerPath => Path.Combine(_ledgerDirectory, "access-ledger.json");
+
+    /// <summary>Replaces this API's revocation ledger in one step, the way a policy bundle would be dropped in.</summary>
+    public async Task WriteAccessLedgerAsync(string json, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(_ledgerDirectory);
+        var draft = LedgerPath + ".tmp";
+        await File.WriteAllTextAsync(draft, json, cancellationToken);
+        File.Move(draft, LedgerPath, overwrite: true);
+    }
 
     /// <summary>Sets up the storage (applies the migrations), unless it's a reused, already migrated database.</summary>
     public async Task PrepareAsync(CancellationToken cancellationToken)
@@ -46,6 +59,7 @@ public class ApiFactory : WebApplicationFactory<Program>
 
         builder.UseSetting($"{StorageOptions.Section}:{nameof(StorageOptions.Provider)}", _database.Provider.ToString());
         builder.UseSetting($"{StorageOptions.Section}:{nameof(StorageOptions.ConnectionString)}", _database.ConnectionString);
+        builder.UseSetting($"{AccessPolicyOptions.Section}:{nameof(AccessPolicyOptions.LedgerPath)}", LedgerPath);
 
         builder.ConfigureTestServices(services =>
         {
@@ -72,6 +86,11 @@ public class ApiFactory : WebApplicationFactory<Program>
         {
             IdentityProvider.Dispose();
             SigningKeys.Dispose();
+
+            if (Directory.Exists(_ledgerDirectory))
+            {
+                Directory.Delete(_ledgerDirectory, recursive: true);
+            }
         }
     }
 }
