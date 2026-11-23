@@ -177,6 +177,17 @@ public class SearchTests : TimeSeriesApiTest
         await AssertValidationProblem(response, expectedField);
     }
 
+    [Fact]
+    public async Task A_series_thousands_of_years_away_doesnt_break_a_search()
+    {
+        var farAway = await Create(Series(start: new DateTimeOffset(9000, 1, 1, 0, 0, 0, TimeSpan.Zero), points: 1));
+        var nearby = await Create(Series(zone: "SE1", resolution: "PT1H", start: Midnight, points: 2, step: TimeSpan.FromHours(1)));
+
+        var results = await Search($"from={Query(new DateTimeOffset(1900, 1, 1, 0, 0, 0, TimeSpan.Zero))}");
+
+        Assert.Equal([nearby.Id, farAway.Id], results.Select(s => s.Id));
+    }
+
     // Points cover 00:00-00:15, 00:15-00:30, 00:30-00:45 and 00:45-01:00; times are seconds after midnight.
     [Theory]
     [InlineData(null, null, 4)]

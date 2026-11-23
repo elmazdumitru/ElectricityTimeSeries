@@ -200,7 +200,7 @@ Requests that break a rule return `400 Bad Request` with the list of invalid fie
 - There must be between 1 and 5,952 points (two months of 15-minute values: 62 days).
 - Each point must start on a resolution boundary (for example 10:15, not 10:07) and follow the previous one by exactly one step: no gaps, duplicates or reordering.
 - Values have at most 6 decimal places (watt-level precision for MW) and lie between 0 and 9,999,999,999,999.999999, the range SQL Server stores exactly (`decimal(19,6)`). The same rule applies to in-memory storage, so both behave alike.
-- In a search, `from` must be earlier than `to`.
+- In a search, `from` must be earlier than `to`, `skip` must be 0 or more, and `take` between 1 and 1000.
 
 ## Solution structure
 

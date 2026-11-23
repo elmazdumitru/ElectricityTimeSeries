@@ -53,12 +53,12 @@ internal sealed class TimeSeriesRepository : ITimeSeriesRepository
 
         if (filter.From is { } pointsFrom)
         {
-            // A point matches when it ends after 'from'. SQL Server can't add a resolution to a time, so there it
-            // counts whole minutes instead, which is exact because points start on a whole minute.
-            points = _context.Database.IsInMemory()
-                ? points.Where(x => x.Point.Timestamp + x.Series.Resolution > pointsFrom)
-                : points.Where(x => EF.Functions.DateDiffMinute(x.Point.Timestamp, pointsFrom)
-                    < EF.Functions.DateDiffMinute(TimeSpan.Zero, x.Series.Resolution));
+            // A point matches when it ends after 'from', so when it starts less than one resolution before it.
+            // SQL Server can't subtract a column's duration, so the two allowed resolutions are spelled out.
+            var hourBefore = Before(pointsFrom, OneHour);
+            var quarterBefore = Before(pointsFrom, FifteenMinutes);
+            points = points.Where(x => x.Point.Timestamp > hourBefore
+                && (x.Series.Resolution == OneHour || x.Point.Timestamp > quarterBefore));
         }
 
         if (filter.To is { } pointsTo)
@@ -153,6 +153,13 @@ internal sealed class TimeSeriesRepository : ITimeSeriesRepository
         var stillExists = await _context.TimeSeries.AsNoTracking().AnyAsync(s => s.Id == series.Id, cancellationToken);
         return stillExists ? throw new ConcurrentChangeException(series.Id) : false;
     }
+
+    private static readonly TimeSpan FifteenMinutes = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan OneHour = TimeSpan.FromHours(1);
+
+    // Stops at the earliest time there is, for a 'from' in the first hour of year 1.
+    private static DateTimeOffset Before(DateTimeOffset time, TimeSpan span) =>
+        time.UtcTicks - span.Ticks < DateTimeOffset.MinValue.UtcTicks ? DateTimeOffset.MinValue : time - span;
 
     private void StampNewVersion(TimeSeries series) =>
         _context.Entry(series).Property(TimeSeriesConfiguration.VersionProperty).CurrentValue = Guid.NewGuid();
