@@ -20,20 +20,14 @@ builder.Services.AddApiAuthentication();
 builder.Services
     .AddControllers(options =>
     {
-        // Report errors under the JSON field names clients send ("biddingZone"), not the C# names.
         options.ModelMetadataDetailsProviders.Add(new SystemTextJsonValidationMetadataProvider());
-
-        // Only [Required] makes something required; otherwise an unreadable body also gets
-        // a needless "The request field is required." error.
         options.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true;
     })
     .AddJsonOptions(options =>
     {
-        // Types are names only: "type": 2 would otherwise be read as CrossBorderFlow.
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
         options.JsonSerializerOptions.Converters.Add(new BiddingZoneJsonConverter());
 
-        // Leave out nulls, so a consumption series has no "toBiddingZone": null.
         options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
     });
 builder.Services.AddProblemDetails();
