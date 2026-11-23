@@ -26,6 +26,10 @@ public static class TelemetryExtensions
                 .AddHttpClientInstrumentation()
                 .AddRuntimeInstrumentation())
             .WithTracing(tracing => tracing
+                // Record every request, even when the caller's trace says not to (Visual Studio's HTTP client does).
+                .SetSampler(new AlwaysOnSampler())
+                // The service and storage spans from Core and Infrastructure.
+                .AddSource("ElectricityTimeSeries.*")
                 .AddAspNetCoreInstrumentation(options =>
                     options.Filter = context => !context.Request.Path.StartsWithSegments("/health"))
                 .AddHttpClientInstrumentation());
