@@ -1,4 +1,4 @@
-# The OpenTelemetry Collector in docker-compose.sqlserver.yml: SQL Server can't send telemetry itself,
+# The OpenTelemetry Collector in docker-compose.yml: SQL Server can't send telemetry itself,
 # so the collector reads it every 10 seconds and passes it on to the Aspire dashboard.
 receivers:
   sql_server:

@@ -110,7 +110,7 @@ User secrets are per machine, so each developer runs the commands above once aft
 
 ### Trying the API from Visual Studio
 
-`src/ElectricityTimeSeries.Api/ElectricityTimeSeries.Api.http` has a request for every endpoint and the common errors. Its environments (`local` for the `https` launch profile, `local-http` for the `http` one, `docker` for Docker) are in `http-client.env.json` and read the token from your user secrets, so nothing secret is committed. Store a token there once:
+`src/ElectricityTimeSeries.Api/ElectricityTimeSeries.Api.http` has a request for every endpoint and the common errors. Its environments (`local` for the `https` launch profile, `docker` for Docker) are in `http-client.env.json` and read the token from your user secrets, so nothing secret is committed. Store a token there once:
 
 ```powershell
 ./scripts/New-DevToken.ps1
@@ -146,8 +146,8 @@ A trace shows the request, the service and repository calls inside it, and each 
 |---|---|---|---|
 | `GET` | `/api/time-series?biddingZone=&type=&from=&to=&skip=&take=` | `TimeSeries.Read` | `200` with one page of matching points, grouped by series |
 | `GET` | `/api/time-series/{id}` | `TimeSeries.Read` | `200`, or `404` |
-| `POST` | `/api/time-series` | `TimeSeries.Write` | `201` with a `Location` header |
-| `PUT` | `/api/time-series/{id}` | `TimeSeries.Write` | `200` with the replaced series, `404`, or `409` if changed at the same moment by another request |
+| `POST` | `/api/time-series` | `TimeSeries.Write` | `201` with a `Location` header, or `409` if it overlaps another series |
+| `PUT` | `/api/time-series/{id}` | `TimeSeries.Write` | `200` with the replaced series, `404`, or `409` if it overlaps another series or was changed at the same moment by another request |
 | `DELETE` | `/api/time-series/{id}` | `TimeSeries.Write` | `204`, `404`, or `409` if changed at the same moment by another request |
 
 Example body for `POST` and `PUT`:
@@ -218,7 +218,7 @@ ElectricityTimeSeries/
 ├── .editorconfig                              Code style
 ├── dotnet-tools.json                          Local tools: dotnet-ef, for migrations
 ├── Dockerfile                                 API container image
-├── docker-compose.yml                         API, SQL Server and the dashboard in containers, for local development
+├── docker-compose.yml                         API, SQL Server, migrations, the dashboard and the collector in containers, for local development
 ├── otel-collector.yaml                        Passes SQL Server's metrics to the dashboard
 ├── .github/workflows/ci.yml                   GitHub Actions pipeline
 ├── scripts/New-DevToken.ps1                   Stores a development token for the .http file
@@ -306,7 +306,7 @@ The tests are split into two levels. By default neither needs Docker, an identit
 
 | Level | What it runs against | Tokens |
 |---|---|---|
-| **Unit** | Isolated classes: the time series rules, `BiddingZone`, `HasScope()`, `ScopeAuthorizationHandler`, the revocation rules and ledger file | none |
+| **Unit** | Isolated classes: the time series rules, `BiddingZone`, `HasScope()`, `ScopeAuthorizationHandler`, the revocation rules and ledger file, and the time zone check for body times (`ZonedTimeJsonConverter`) | none |
 | **Integration** | The whole API, run inside the test process with `WebApplicationFactory` and called through HTTP requests (no network), on in-memory storage or SQL Server | signed by the test project with its own key pair |
 
 ```powershell
@@ -344,7 +344,7 @@ With `SqlServer`, the tests start one SQL Server container themselves through [T
 
 GitHub Actions runs `.github/workflows/ci.yml` on every push to `main` and every pull request. It restores and builds in Release, runs the unit tests, runs the integration tests twice (in-memory storage, then SQL Server in Docker), and uploads the test results. Results appear on the run's summary page, built from xUnit's Markdown reports, with details of any failed test:
 
-![A GitHub Actions run summary: 63 unit tests, and 132 integration tests both in memory and on SQL Server, all passed](docs/screenshots/github-actions-summary.png)
+![A GitHub Actions run summary: the unit tests, and the integration tests both in memory and on SQL Server, all passed](docs/screenshots/github-actions-summary.png)
 
 ## Assumptions
 

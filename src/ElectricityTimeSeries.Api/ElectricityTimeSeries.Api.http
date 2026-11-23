@@ -1,4 +1,4 @@
-# Pick the environment matching your launch profile (local = https, local-http, docker); a mismatch gives 401.
+# Pick the environment matching how you run the API (local = https profile, docker = Docker); a mismatch gives 401.
 # Store a token once with ./scripts/New-DevToken.ps1, and again when requests start returning 401.
 
 ### Health check (no token needed)

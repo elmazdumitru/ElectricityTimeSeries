@@ -486,5 +486,5 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 
-# Local revocation ledger (see the README's Security section)
+# Local revocation ledger (see the Security section in DOCS.md)
 src/ElectricityTimeSeries.Api/access-ledger.json
