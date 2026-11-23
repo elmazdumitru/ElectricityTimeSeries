@@ -4,8 +4,13 @@
     <File Path="Directory.Build.props" />
     <File Path="Directory.Build.targets" />
     <File Path="Directory.Packages.props" />
+    <File Path="azure-pipelines.yml" />
+    <File Path="dotnet-tools.json" />
     <File Path="global.json" />
     <File Path="NuGet.config" />
+  </Folder>
+  <Folder Name="/scripts/">
+    <File Path="scripts/New-DevToken.ps1" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/ElectricityTimeSeries.Api/ElectricityTimeSeries.Api.csproj" />
