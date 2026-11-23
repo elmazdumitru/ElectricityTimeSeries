@@ -1,9 +1,6 @@
 namespace ElectricityTimeSeries.Api.Authorization;
 
-/// <summary>
-/// Names of the API's authorization policies, referenced by controllers via
-/// <c>[Authorize(Policy = ...)]</c>. Their rules are defined in <see cref="AuthorizationExtensions"/>.
-/// </summary>
+/// <summary>Policy names for [Authorize]; their rules are in <see cref="AuthorizationExtensions"/>.</summary>
 public static class Policies
 {
     public const string CanReadTimeSeries = nameof(CanReadTimeSeries);
