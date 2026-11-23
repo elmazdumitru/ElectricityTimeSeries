@@ -14,7 +14,7 @@ $ErrorActionPreference = 'Stop'
 $project = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($PSScriptRoot, '..', 'src', 'ElectricityTimeSeries.Api'))
 
 $jwtArgs = @('user-jwts', 'create', '--project', $project,
-    '--scope', 'TimeSeries.Read', '--scope', 'TimeSeries.Write', '--output', 'token')
+    '--scope', 'TimeSeries.Read', '--scope', 'TimeSeries.Write', '--claim', 'client_id=local-dev', '--output', 'token')
 if ($ValidFor) {
     $jwtArgs += @('--valid-for', $ValidFor)
 }

@@ -78,10 +78,10 @@ The API uses JWT bearer tokens. Locally, tokens are issued by the [`dotnet user-
 
 ```powershell
 # Token with full access (read + write)
-dotnet user-jwts create --project src/ElectricityTimeSeries.Api --name dev-user --scope TimeSeries.Read --scope TimeSeries.Write
+dotnet user-jwts create --project src/ElectricityTimeSeries.Api --name dev-user --scope TimeSeries.Read --scope TimeSeries.Write --claim client_id=local-dev
 
 # Read-only token
-dotnet user-jwts create --project src/ElectricityTimeSeries.Api --name reader --scope TimeSeries.Read
+dotnet user-jwts create --project src/ElectricityTimeSeries.Api --name reader --scope TimeSeries.Read --claim client_id=local-dev
 ```
 
 Send the printed token in the `Authorization` header:
@@ -235,13 +235,34 @@ The solution follows **Clean Architecture** principles, built on the **Dependenc
 - Scopes are read from the `scope` claim (OAuth 2.0 standard, used by `dotnet user-jwts`) and the `scp` claim (Microsoft Entra ID), including space-separated values.
 - A missing or invalid token returns `401 Unauthorized`; a valid token without the required scope returns `403 Forbidden`. Both use the Problem Details format.
 
+### Emergency revocation
+
+A token can be shut out before it expires, for example when a client's secret leaks. After the usual token checks, the API asks an `IPolicyEnforcementPoint` whether the token may still be used. If not, the request gets `401`, like any invalid token.
+
+For now that's a shortcut: `FileRevocationLedger` reads revocations from a JSON file and reloads it whenever the file changes, standing in for a policy service that pushes updates to every API. A real one replaces it by registering another `IPolicyEnforcementPoint`.
+
+```json
+{
+  "revocations": [
+    { "clientId": "billing-app", "reason": "Client secret leaked." },
+    { "tenantId": "contoso", "issuedBefore": "2026-11-23T10:00:00Z" }
+  ]
+}
+```
+
+- An entry revokes the tokens that match every field it sets: `clientId` (the `client_id` claim, or `azp`), `tenantId` (`tid`), `subject` (`sub`) and `issuedBefore` (tokens issued before that time; a token without `iat` counts as older). An entry that sets none of them revokes nothing.
+- `reason` is only logged. Callers just get `401`.
+- The file is `AccessPolicy:LedgerPath`, by default `access-ledger.json` in the API's folder (ignored by git). No file means nothing is revoked. If a new version can't be read, the previous one stays in force and an error is logged; writing the new file under another name and renaming it over the old one avoids half-written reads.
+- To try it, run the API with `dotnet run`, create `src/ElectricityTimeSeries.Api/access-ledger.json` revoking `local-dev` (the `client_id` of the development tokens above), and the next request returns `401`. Delete the file to undo it.
+- In a container, point `AccessPolicy__LedgerPath` at a mounted folder. Change notifications don't always reach a container, so set `DOTNET_USE_POLLING_FILE_WATCHER=true` too; the file is then checked every few seconds.
+
 ## Testing
 
 The tests are split into two levels. By default neither needs Docker, an identity provider or any local setup. Both use xUnit 3 on Microsoft.Testing.Platform (set in `global.json`).
 
 | Level | What it runs against | Tokens |
 |---|---|---|
-| **Unit** | Isolated classes: the time series rules, `BiddingZone`, `HasScope()`, `ScopeAuthorizationHandler` | none |
+| **Unit** | Isolated classes: the time series rules, `BiddingZone`, `HasScope()`, `ScopeAuthorizationHandler`, the revocation rules and ledger file | none |
 | **Integration** | The whole API, run inside the test process with `WebApplicationFactory` and called through HTTP requests (no network), on in-memory storage or SQL Server | signed by the test project with its own key pair |
 
 ```powershell
@@ -257,6 +278,7 @@ dotnet test
 - The time series endpoints are tested with raw JSON requests, so the tests also pin down the public JSON format: field names, type names and `PT15M` durations. They cover each operation, searching, every validation rule, `404` for unknown ids, and that each endpoint needs the right scope.
 - Each test gets its own API instance and starts on empty storage that no other test is using (`IsolatedApiTest`). So every test is repeatable, can check exact results ("the search returns exactly these two"), and runs in any order or in parallel. Tests that don't need a clean slate can share one API and database explicitly (`SharedApiFixture`); the authorization tests do, since they store nothing.
 - Authorization is tested through test-only endpoints (`AuthorizationProbeController`) that use the real policies. They are added only inside the test host and never ship with the API.
+- Each test's API also gets its own revocation ledger file. The revocation tests write one while the API runs and check that the revoked client's tokens start getting `401` while another client's carry on.
 
 ### Storage: in memory or SQL Server
 
