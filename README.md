@@ -150,6 +150,7 @@ ElectricityTimeSeries/
 ├── azure-pipelines.yml                        Azure DevOps pipeline
 ├── .github/workflows/ci.yml                   GitHub Actions pipeline
 ├── scripts/New-DevToken.ps1                   Stores a development token for the .http file
+├── docs/architecture.svg                      The architecture diagram below
 ├── src/
 │   ├── ElectricityTimeSeries.Api/             Presentation: controllers, request/response contracts, startup wiring
 │   ├── ElectricityTimeSeries.Core/            Domain + application: entities, business rules, services, abstractions
@@ -163,11 +164,7 @@ ElectricityTimeSeries/
 
 The solution follows **Clean Architecture** principles, built on the **Dependency Inversion Principle**: source code dependencies point inward, towards the business logic.
 
-```
-        ┌──────────► Core ◄──────────┐
-       Api                    Infrastructure ──► storage
-        └─ (Program.cs only) ────────┘
-```
+![Api and Infrastructure both depend on Core; Api uses Infrastructure only in Program.cs; Infrastructure stores data in memory or in SQL Server](docs/architecture.svg)
 
 | Project | Responsibility | Depends on |
 |---|---|---|
