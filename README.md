@@ -21,7 +21,11 @@ Docker isn't needed: the API keeps its data in memory.
 
    It creates the token with `dotnet user-jwts`, which comes with the SDK, and keeps it in your user secrets, outside the repository. If PowerShell refuses to run scripts, use `powershell -ExecutionPolicy Bypass -File .\scripts\New-DevToken.ps1` instead.
 
-3. Pick the **https** launch profile next to the Run button and press **F5**. The first time, Visual Studio offers to trust its HTTPS development certificate: accept it.
+3. Pick the **https** launch profile next to the Run button and press **F5**. The first time, Visual Studio offers to trust its HTTPS development certificate, and then Windows asks to install it: say **Yes** to both. If you said no or never saw the prompts, run this, then restart the API:
+
+   ```powershell
+   dotnet dev-certs https --trust
+   ```
 
 4. Open `src/ElectricityTimeSeries.Api/ElectricityTimeSeries.Api.http`, pick the **local** environment at the top right, and click **Send request** above any request. There's one for every endpoint and for the common errors. Here a new production series has just come back as `201 Created`; the environment list shows `local` next to the others:
 
