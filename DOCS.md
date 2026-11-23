@@ -194,6 +194,7 @@ Requests that break a rule return `400 Bad Request` with the list of invalid fie
 
 - Missing or `null` fields are reported by name, all at once, for example `resolution` or `points[0].value`. A `null` point is reported by its position, for example `points[1]`. A wrong value type (text where a number is expected) is reported on the field itself, for example `$.points[0].timestamp`.
 - `type` must be one of the three names; a number such as `2` isn't accepted. An unknown `type` is reported as `$.type`.
+- Times in the body must say their time zone: `Z` or an offset such as `+01:00`. `2025-11-22T10:00:00` alone is reported on the field, for example `$.points[0].timestamp`.
 - Only `CrossBorderFlow` takes a `toBiddingZone`, and there it's required. A flow's direction is its zone order: `NO2` → `DK1` and `DK1` → `NO2` are separate series.
 - The bidding zones must be known (see [Assumptions](#assumptions)). A flow needs a different receiving zone; other types can't have one.
 - The resolution must be 15 minutes or 1 hour.
@@ -351,7 +352,7 @@ GitHub Actions runs `.github/workflows/ci.yml` on every push to `main` and every
 - **Bidding zones:** the Nordic zones (`NO1`–`NO5`, `SE1`–`SE4`, `FI`, `DK1`, `DK2`) and the neighbouring zones they trade with (`EE`, `LV`, `LT`, `PL`, `DE-LU`, `NL`, `GB`). Codes are case-insensitive and stored in upper case.
 - **Units:** all values are in MW, the average power over each point's period.
 - **Resolution:** 15 minutes (the Nordic market time unit since 2025) or 1 hour (older data).
-- **Time zones:** clients may send any offset; times are stored and returned in UTC. A time sent without an offset is read as the server's local time (UTC in the Docker container), so clients should always send one.
+- **Time zones:** clients may send any offset; times are stored and returned in UTC. In the body, a time without one is rejected. In a search URL it's still read as the server's local time (UTC in the Docker container), since URL values don't go through the JSON settings, so clients should always send one.
 - **No overlaps:** only one series may cover a given type, zone (or zone pair, in that order) and time. A create or update that would overlap gets `409 Conflict`, with the ids of the series in the way under `overlappingIds`. Series that only touch (one ends at 10:00, the next starts at 10:00) don't overlap.
 - **Simultaneous changes:** when two requests change or delete the same series at the same moment, one is saved and the other gets `409 Conflict` (get the series again and retry); a change is never half-applied. Each series has a hidden version stamp for this, kept in storage only. There is no `ETag` / `If-Match` yet, so a client that read a series earlier and saves later still overwrites changes made in between.
 - **Paging is by position** (`skip` and `take`), not by a cursor: simple for clients, at the cost of the shifts described in [Searching](#searching) when the data changes between pages. The count and the page are two separate queries, not one transaction.

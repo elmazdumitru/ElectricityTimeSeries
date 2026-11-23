@@ -50,7 +50,16 @@ public class ValidationTests : TimeSeriesApiTest
         { "points", WithNull(Series(), "points") },
         { "points[0]", With(Series(), "points", new JsonArray((JsonNode?)null)) },
         { "points[1]", WithNullPoint(Series(points: 3), 1) },
+        // Times must say their time zone.
+        { "$.points[0].timestamp", WithTimestamp(Series(), "2025-11-22T00:00:00") },
+        { "$.points[0].timestamp", WithTimestamp(Series(), "2025-11-22") },
     };
+
+    private static JsonObject WithTimestamp(JsonObject body, string timestamp)
+    {
+        body["points"]![0]!["timestamp"] = timestamp;
+        return body;
+    }
 
     private static JsonObject WithNullPoint(JsonObject body, int index)
     {

@@ -38,6 +38,7 @@ builder.Services.AddOpenApi(options =>
 {
     options.AddSchemaTransformer<BiddingZoneSchemaTransformer>();
     options.AddSchemaTransformer<DurationSchemaTransformer>();
+    options.AddSchemaTransformer<ZonedTimeSchemaTransformer>();
 });
 
 var app = builder.Build();
@@ -64,6 +65,7 @@ static void ConfigureJson(JsonSerializerOptions options)
 {
     options.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
     options.Converters.Add(new BiddingZoneJsonConverter());
+    options.Converters.Add(new ZonedTimeJsonConverter());
 
     options.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
 }
