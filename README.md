@@ -2,7 +2,7 @@
 
 A small REST API built with C# and ASP.NET Core for managing electricity market time series data, such as production, consumption and cross-border flows between bidding zones.
 
-> **Status:** the CRUD endpoints, filtering, validation, authentication and authorization, tests and CI are in place. Data is stored through EF Core, in memory (the default) or in SQL Server; the integration tests run against both.
+> **Status:** the CRUD endpoints, filtering, validation, authentication and authorization, telemetry, tests and CI are in place. Data is stored through EF Core, in memory (the default) or in SQL Server; the integration tests run against both.
 
 ## Requirements
 
@@ -41,7 +41,7 @@ Both launch profiles run in the `Development` environment: the OpenAPI document 
 
 ### In Docker
 
-`docker-compose.yml` runs the API in a container, in the `Development` environment with in-memory storage, at `http://localhost:5020`:
+`docker-compose.yml` runs the API in a container, in the `Development` environment with in-memory storage, at `http://localhost:5020`, next to the [Aspire dashboard](#logs-traces-and-metrics):
 
 ```powershell
 docker compose up --detach --build
@@ -101,6 +101,18 @@ User secrets are per machine, so each developer runs the commands above once aft
 ```
 
 Then pick the environment above the `.http` file and send requests. Tokens last about three months (or pass `-ValidFor 365d`); run the script again when requests start returning `401`. It prints when the new token expires.
+
+### Logs, traces and metrics
+
+The API sends its logs, traces and metrics through OpenTelemetry, but only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Locally they go to the Aspire dashboard, which runs as a container:
+
+- `docker compose up` starts the dashboard next to the API. Open `http://localhost:18888`; there's no login, since it only listens on this machine.
+- `dotnet run`, F5 and the `Container (Dockerfile)` profile send to the same dashboard. To start only the dashboard: `docker compose up dashboard --detach`.
+- If the dashboard isn't running, nothing breaks; the telemetry is just dropped.
+- A trace shows the request, the service and repository calls inside it, and each save; on SQL Server, the SQL calls too. Every request is traced, even when the caller asks not to (Visual Studio's HTTP client does). `/health` calls are left out.
+- In Development, metrics go out every 5 seconds (`OTEL_METRIC_EXPORT_INTERVAL`), instead of every minute.
+- The tests and CI send nothing. One integration test (`TelemetryTests`) catches the API's traces in memory, to make sure they keep being produced.
+- Sending it somewhere else later (Grafana, Azure Monitor, …) is a settings change: point `OTEL_EXPORTER_OTLP_ENDPOINT` there.
 
 ## API
 
@@ -279,6 +291,7 @@ dotnet test
 - Each test gets its own API instance and starts on empty storage that no other test is using (`IsolatedApiTest`). So every test is repeatable, can check exact results ("the search returns exactly these two"), and runs in any order or in parallel. Tests that don't need a clean slate can share one API and database explicitly (`SharedApiFixture`); the authorization tests do, since they store nothing.
 - Authorization is tested through test-only endpoints (`AuthorizationProbeController`) that use the real policies. They are added only inside the test host and never ship with the API.
 - Each test's API also gets its own revocation ledger file. The revocation tests write one while the API runs and check that the revoked client's tokens start getting `401` while another client's carry on.
+- Telemetry is checked by catching the API's traces in memory (`TelemetryTests`), down to the save of a new series. A test request carries its own trace id, so it can't be confused with other tests' requests.
 
 ### Storage: in memory or SQL Server
 

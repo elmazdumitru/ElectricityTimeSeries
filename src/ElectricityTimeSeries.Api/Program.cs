@@ -3,11 +3,14 @@ using ElectricityTimeSeries.Api.Authorization;
 using ElectricityTimeSeries.Api.ErrorHandling;
 using ElectricityTimeSeries.Api.Json;
 using ElectricityTimeSeries.Api.OpenApi;
+using ElectricityTimeSeries.Api.Telemetry;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
 using ElectricityTimeSeries.Core;
 using ElectricityTimeSeries.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.AddApiTelemetry();
 
 builder.Services
     .AddCore()

@@ -17,16 +17,22 @@ public sealed class TimeSeriesService
 
     public async Task<TimeSeries> CreateAsync(TimeSeriesDefinition definition, CancellationToken cancellationToken)
     {
+        using var activity = CoreTelemetry.StartActivity("TimeSeriesService.Create");
         var series = TimeSeries.Create(definition);
+        activity?.SetTag("timeseries.id", series.Id);
         await _repository.AddAsync(series, cancellationToken);
         return series;
     }
 
-    public Task<TimeSeries?> GetAsync(Guid id, CancellationToken cancellationToken) =>
-        _repository.GetAsync(id, cancellationToken);
+    public async Task<TimeSeries?> GetAsync(Guid id, CancellationToken cancellationToken)
+    {
+        using var activity = CoreTelemetry.StartActivity("TimeSeriesService.Get", id);
+        return await _repository.GetAsync(id, cancellationToken);
+    }
 
     public async Task<IReadOnlyList<TimeSeriesSearchResult>> SearchAsync(TimeSeriesFilter filter, CancellationToken cancellationToken)
     {
+        using var activity = CoreTelemetry.StartActivity("TimeSeriesService.Search");
         var errors = new ValidationErrors();
 
         if (filter.BiddingZone is { IsKnown: false })
@@ -53,6 +59,7 @@ public sealed class TimeSeriesService
         };
 
         var matches = await _repository.FindAsync(normalized, cancellationToken);
+        activity?.SetTag("timeseries.count", matches.Count);
 
         return matches
             .Select(series => new TimeSeriesSearchResult(series, series.PointsWithin(normalized.From, normalized.To)))
@@ -61,6 +68,7 @@ public sealed class TimeSeriesService
 
     public async Task<TimeSeries?> UpdateAsync(Guid id, TimeSeriesDefinition definition, CancellationToken cancellationToken)
     {
+        using var activity = CoreTelemetry.StartActivity("TimeSeriesService.Update", id);
         var series = await _repository.GetAsync(id, cancellationToken);
         if (series is null)
         {
@@ -75,6 +83,7 @@ public sealed class TimeSeriesService
 
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken)
     {
+        using var activity = CoreTelemetry.StartActivity("TimeSeriesService.Delete", id);
         var series = await _repository.GetAsync(id, cancellationToken);
         if (series is null)
         {

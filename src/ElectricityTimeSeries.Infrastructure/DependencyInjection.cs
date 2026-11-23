@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using OpenTelemetry.Trace;
 
 namespace ElectricityTimeSeries.Infrastructure;
 
@@ -33,6 +34,8 @@ public static class DependencyInjection
                 // Retry dropped connections, and deadlocks between requests changing the same series.
                 services.AddDbContext<TimeSeriesDbContext>(options =>
                     options.UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure()));
+                // Each SQL call shows up in the API's traces.
+                services.ConfigureOpenTelemetryTracerProvider(tracing => tracing.AddSqlClientInstrumentation());
                 break;
 
             default:
