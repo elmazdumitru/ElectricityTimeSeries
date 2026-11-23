@@ -19,6 +19,7 @@ This is everything about the API. To get it running quickly from Visual Studio, 
 
 - [.NET 11 SDK](https://dotnet.microsoft.com/download) (`global.json` requires 11.0.100 or any later 11.0 SDK)
 - [Docker](https://www.docker.com/) with Docker Compose, optional: for running the API in a container, and for running the integration tests against SQL Server
+- An x64 (Intel or AMD) processor for anything with SQL Server: its Docker image doesn't run on ARM processors yet, so on ARM, run the API on your machine, in memory
 
 ## Running the API
 
