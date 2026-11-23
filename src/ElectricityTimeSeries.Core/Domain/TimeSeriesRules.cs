@@ -1,6 +1,5 @@
 namespace ElectricityTimeSeries.Core.Domain;
 
-/// <summary>The business rules a time series must follow.</summary>
 internal static class TimeSeriesRules
 {
     private const double SupportedResolution15Minutes = 15;
@@ -16,48 +15,59 @@ internal static class TimeSeriesRules
     // Stops reporting point errors after this many, so a bad upload can't produce a huge response.
     private const int MaxPointErrors = 50;
 
+    // Values in MW: 6 decimal places is watt-level precision, and 13 digits before the point is far
+    // more than any bidding zone. Every storage keeps values this size exactly (SQL Server: decimal(19,6)).
+    internal const int MaxDecimalPlaces = 6;
+    internal const decimal MaxAbsoluteValue = 9_999_999_999_999.999999m;
+
     public static void Validate(TimeSeriesDefinition definition)
     {
-        var errors = new ValidationErrors();
-
-        if (!Enum.IsDefined(definition.Type))
+        if (definition.Value is null)
         {
-            errors.Add("type", "Unknown time series type.");
+            // Only possible through default(TimeSeriesDefinition): a programming mistake, not bad input.
+            throw new ArgumentException("The definition holds no time series.", nameof(definition));
         }
 
-        if (!definition.BiddingZone.IsKnown)
+        var errors = new ValidationErrors();
+        var content = definition.Content;
+
+        if (!content.BiddingZone.IsKnown)
         {
             errors.Add("biddingZone", $"Unknown bidding zone. Known zones: {BiddingZone.ConcatenatedKnownZones}.");
         }
 
-        if (definition.Type is TimeSeriesType.CrossBorderFlow)
+        if (definition is CrossBorderFlowDefinition flow)
         {
-            if (definition.ToBiddingZone is not { IsKnown: true })
+            if (!flow.ToBiddingZone.IsKnown)
             {
-                errors.Add("toBiddingZone", $"A cross-border flow needs a known receiving bidding zone. Known zones: {BiddingZone.ConcatenatedKnownZones}.");
+                errors.Add("toBiddingZone", $"Unknown bidding zone. Known zones: {BiddingZone.ConcatenatedKnownZones}.");
             }
-            else if (definition.BiddingZone == definition.ToBiddingZone)
+            else if (flow.BiddingZone == flow.ToBiddingZone)
             {
                 errors.Add("toBiddingZone", "A cross-border flow must go to a different bidding zone.");
             }
         }
-        else if (definition.ToBiddingZone is not null)
-        {
-            errors.Add("toBiddingZone", "Only cross-border flows have a receiving bidding zone.");
-        }
 
-        var resolutionIsValid = definition.Resolution.IsSupportedResolution();
+        var resolutionIsValid = content.Resolution.IsSupportedResolution();
         if (!resolutionIsValid)
         {
             errors.Add("resolution", "Supported resolutions are 15 minutes (PT15M) and 1 hour (PT1H).");
         }
 
-        ValidatePoints(definition, resolutionIsValid, errors);
+        // A negative flow means the electricity flows the other way; a negative production or
+        // consumption is meaningless. Listing every kind makes a new kind a compile error here.
+        var negativeValuesAllowed = definition switch
+        {
+            CrossBorderFlowDefinition => true,
+            ProductionDefinition or ConsumptionDefinition => false,
+        };
+
+        ValidatePoints(content, negativeValuesAllowed, resolutionIsValid, errors);
 
         errors.ThrowIfAny();
     }
 
-    private static void ValidatePoints(TimeSeriesDefinition definition, bool checkTimeSpans, ValidationErrors errors)
+    private static void ValidatePoints(TimeSeriesContent definition, bool negativeValuesAllowed, bool checkTimeSpans, ValidationErrors errors)
     {
         var points = definition.Points;
 
@@ -79,9 +89,24 @@ internal static class TimeSeriesRules
         {
             var point = points[i];
 
-            if (definition.Type is not TimeSeriesType.CrossBorderFlow && point.Value < 0)
+            if (!negativeValuesAllowed && point.Value < 0)
             {
                 if (AddPointError(i, "value", "Production and consumption can't be negative."))
+                {
+                    return;
+                }
+            }
+
+            if (decimal.Round(point.Value, MaxDecimalPlaces) != point.Value)
+            {
+                if (AddPointError(i, "value", $"At most {MaxDecimalPlaces} decimal places are allowed."))
+                {
+                    return;
+                }
+            }
+            else if (Math.Abs(point.Value) > MaxAbsoluteValue)
+            {
+                if (AddPointError(i, "value", $"Must be between -{MaxAbsoluteValue:N0} and {MaxAbsoluteValue:N0}."))
                 {
                     return;
                 }
