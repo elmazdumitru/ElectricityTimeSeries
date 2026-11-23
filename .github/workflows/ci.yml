@@ -38,13 +38,15 @@ jobs:
         run: >-
           dotnet test --project tests/ElectricityTimeSeries.UnitTests
           --configuration Release --no-build
-          --report-xunit-trx --results-directory TestResults/unit
+          --report-xunit-trx --report-xunit-markdown --report-xunit-markdown-filename unit.md
+          --results-directory TestResults/unit
 
       - name: Integration tests (in-memory storage)
         run: >-
           dotnet test --project tests/ElectricityTimeSeries.Api.IntegrationTests
           --configuration Release --no-build
-          --report-xunit-trx --results-directory TestResults/in-memory
+          --report-xunit-trx --report-xunit-markdown --report-xunit-markdown-filename in-memory.md
+          --results-directory TestResults/in-memory
 
       # The tests start SQL Server themselves (Testcontainers); the runner only needs Docker.
       - name: Integration tests (SQL Server)
@@ -53,7 +55,20 @@ jobs:
         run: >-
           dotnet test --project tests/ElectricityTimeSeries.Api.IntegrationTests
           --configuration Release --no-build
-          --report-xunit-trx --results-directory TestResults/sql-server
+          --report-xunit-trx --report-xunit-markdown --report-xunit-markdown-filename sql-server.md
+          --results-directory TestResults/sql-server
+
+      # Show each run's results on the workflow's summary page, like the Tests tab in Azure DevOps.
+      - name: Test summary
+        if: always()
+        run: |
+          for run in "unit:Unit tests" "in-memory:Integration tests (in-memory storage)" "sql-server:Integration tests (SQL Server)"; do
+            report=$(find "TestResults/${run%%:*}" -name '*.md' 2>/dev/null | head -n 1)
+            if [ -n "$report" ]; then
+              sed "s/^### Test Results$/### ${run#*:}/" "$report" >> "$GITHUB_STEP_SUMMARY"
+              echo >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
 
       - name: Upload test results
         if: always()
