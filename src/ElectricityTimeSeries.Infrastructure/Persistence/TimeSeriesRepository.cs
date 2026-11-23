@@ -224,7 +224,13 @@ internal sealed class TimeSeriesRepository : ITimeSeriesRepository
 
             await ThrowIfOverlapsAsync(series, cancellationToken);
             var saved = await save();
-            await transaction.CommitAsync(cancellationToken);
+
+            // A save that lost a race (deleted meanwhile) may have had its transaction rolled back by SQL Server.
+            if (saved)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+
             return saved;
         });
     }
