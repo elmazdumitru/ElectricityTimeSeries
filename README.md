@@ -104,6 +104,10 @@ User secrets are per machine, so each developer runs the commands above once aft
 
 Then pick the environment above the `.http` file and send requests. Tokens last about three months (or pass `-ValidFor 365d`); run the script again when requests start returning `401`. It prints when the new token expires.
 
+Here it's pointed at `docker compose`, and a new production series has just come back as `201 Created`:
+
+![The .http file in Visual Studio with the docker environment selected, and a 201 Created response for a new production series](docs/screenshots/visual-studio-http-file.png)
+
 ### Storage in Docker
 
 Two scripts start everything in Docker and wait until the API answers. Either one switches over from the other:
@@ -130,7 +134,13 @@ The API sends its logs, traces and metrics through OpenTelemetry, but only when 
 - `docker compose up` starts the dashboard next to the API. Open `http://localhost:18888`; there's no login, since it only listens on this machine.
 - `dotnet run`, F5 and the `Container (Dockerfile)` profile send to the same dashboard. To start only the dashboard: `docker compose up dashboard --detach`.
 - If the dashboard isn't running, nothing breaks; the telemetry is just dropped.
-- A trace shows the request, the service and repository calls inside it, and each save; on SQL Server, the SQL calls too. With [SQL Server in Docker](#storage-in-docker), SQL Server's own metrics and most expensive queries show up as well. Every request is traced, even when the caller asks not to (Visual Studio's HTTP client does). `/health` calls are left out.
+
+A trace shows the request, the service and repository calls inside it, and each save; on SQL Server, the SQL calls too. Here's a `PUT` with the API running on SQL Server in Docker. The popup is one of EF Core's log lines, attached to the step it came from:
+
+![A PUT request traced in the Aspire dashboard: TimeSeriesService.Update, then TimeSeriesRepository.Get with its SELECT, and TimeSeriesRepository.Update with SaveChanges and its UPDATE on SQL Server](docs/screenshots/aspire-dashboard-trace.webp)
+
+- With [SQL Server in Docker](#storage-in-docker), SQL Server's own metrics and most expensive queries show up as well.
+- Every request is traced, even when the caller asks not to (Visual Studio's HTTP client does). `/health` calls are left out.
 - In Development, metrics go out every 5 seconds (`OTEL_METRIC_EXPORT_INTERVAL`), instead of every minute.
 - The tests and CI send nothing. One integration test (`TelemetryTests`) catches the API's traces in memory, to make sure they keep being produced.
 - Sending it somewhere else later (Grafana, Azure Monitor, …) is a settings change: point `OTEL_EXPORTER_OTLP_ENDPOINT` there.
@@ -218,6 +228,7 @@ ElectricityTimeSeries/
 ├── scripts/Start-InMemory.ps1                 Runs the API in Docker, in memory
 ├── scripts/Start-SqlServer.ps1                Runs the API in Docker, on SQL Server
 ├── docs/architecture.svg                      The architecture diagram below
+├── docs/screenshots/                          The screenshots in this README
 ├── src/
 │   ├── ElectricityTimeSeries.Api/             Presentation: controllers, request/response contracts, startup wiring
 │   ├── ElectricityTimeSeries.Core/            Domain + application: entities, business rules, services, abstractions
@@ -335,10 +346,15 @@ With `SqlServer`, the tests start one SQL Server container themselves through [T
 
 ### Continuous integration
 
-Two equivalent pipelines restore and build in Release, run the unit tests, run the integration tests twice (in-memory storage, then SQL Server in Docker), and publish the test results:
+Two equivalent pipelines restore and build in Release, run the unit tests, run the integration tests twice (in-memory storage, then SQL Server in Docker), and publish the test results.
 
-- **Azure DevOps:** `azure-pipelines.yml`, on a Microsoft-hosted Ubuntu agent. Results appear in the run's Tests tab.
-- **GitHub Actions:** `.github/workflows/ci.yml`, on every push to `main` and every pull request. Results appear on the run's summary page, built from xUnit's Markdown reports, with details of any failed test.
+**Azure DevOps** runs `azure-pipelines.yml` on a Microsoft-hosted Ubuntu agent. Results appear in the run's Tests tab. In this run, the SQL Server integration tests are applying the migrations to the database they've just started:
+
+![An Azure Pipelines run with every step passed, showing the SQL Server integration tests applying the migrations](docs/screenshots/azure-pipelines-run.png)
+
+**GitHub Actions** runs `.github/workflows/ci.yml` on every push to `main` and every pull request. Results appear on the run's summary page, built from xUnit's Markdown reports, with details of any failed test:
+
+![A GitHub Actions run summary: 63 unit tests, and 132 integration tests both in memory and on SQL Server, all passed](docs/screenshots/github-actions-summary.png)
 
 ## Assumptions
 
