@@ -19,8 +19,7 @@ public sealed class TimeSeriesController : ControllerBase
         _service = service;
     }
 
-    /// <summary>Finds time series by bidding zone, type and time interval.</summary>
-    /// <remarks>When a time interval is given, each series only contains the points inside it.</remarks>
+    /// <summary>Finds time series. With a time interval, each series only holds the points inside it.</summary>
     [HttpGet]
     [Authorize(Policy = Policies.CanReadTimeSeries)]
     [ProducesResponseType<IReadOnlyList<TimeSeriesResponse>>(StatusCodes.Status200OK)]
@@ -56,6 +55,7 @@ public sealed class TimeSeriesController : ControllerBase
     /// <summary>Replaces the whole contents of a time series.</summary>
     [HttpPut("{id:guid}")]
     [Authorize(Policy = Policies.CanWriteTimeSeries)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     [Consumes("application/json")]
     [ProducesResponseType<TimeSeriesResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -68,6 +68,7 @@ public sealed class TimeSeriesController : ControllerBase
 
     [HttpDelete("{id:guid}")]
     [Authorize(Policy = Policies.CanWriteTimeSeries)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken) =>

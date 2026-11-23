@@ -11,7 +11,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services
     .AddCore()
-    .AddInfrastructure();
+    .AddInfrastructure(builder.Configuration);
 
 builder.Services.AddApiAuthentication();
 builder.Services
@@ -39,6 +39,7 @@ builder.Services
 builder.Services.ConfigureOptions<MissingTypeJsonInputFormatterSetup>();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<DomainValidationExceptionHandler>();
+builder.Services.AddExceptionHandler<ConcurrentChangeExceptionHandler>();
 builder.Services.AddHealthChecks();
 
 builder.Services.AddOpenApi(options =>

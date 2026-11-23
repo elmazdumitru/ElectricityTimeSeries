@@ -1,5 +1,6 @@
 using ElectricityTimeSeries.Core.Abstractions;
 using ElectricityTimeSeries.Core.Domain;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace ElectricityTimeSeries.Infrastructure.Persistence;
@@ -7,10 +8,12 @@ namespace ElectricityTimeSeries.Infrastructure.Persistence;
 internal sealed class TimeSeriesRepository : ITimeSeriesRepository
 {
     private readonly TimeSeriesDbContext _context;
+    private readonly RacingSaveGuard _racingSaves;
 
-    public TimeSeriesRepository(TimeSeriesDbContext context)
+    public TimeSeriesRepository(TimeSeriesDbContext context, RacingSaveGuard racingSaves)
     {
         _context = context;
+        _racingSaves = racingSaves;
     }
 
     public Task<TimeSeries?> GetAsync(Guid id, CancellationToken cancellationToken) =>
@@ -50,22 +53,71 @@ internal sealed class TimeSeriesRepository : ITimeSeriesRepository
     public async Task AddAsync(TimeSeries series, CancellationToken cancellationToken)
     {
         _context.TimeSeries.Add(series);
+        StampNewVersion(series);
         await _context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task UpdateAsync(TimeSeries series, CancellationToken cancellationToken)
+    public async Task<bool> UpdateAsync(TimeSeries series, CancellationToken cancellationToken)
     {
         if (_context.Entry(series).State == EntityState.Detached)
         {
             _context.TimeSeries.Update(series);
         }
 
-        await _context.SaveChangesAsync(cancellationToken);
+        StampNewVersion(series);
+        return await SaveRacingChangesAsync(series, cancellationToken);
     }
 
-    public async Task DeleteAsync(TimeSeries series, CancellationToken cancellationToken)
+    public async Task<bool> DeleteAsync(TimeSeries series, CancellationToken cancellationToken)
     {
         _context.TimeSeries.Remove(series);
-        await _context.SaveChangesAsync(cancellationToken);
+        return await SaveRacingChangesAsync(series, cancellationToken);
     }
+
+    private void StampNewVersion(TimeSeries series) =>
+        _context.Entry(series).Property(TimeSeriesConfiguration.VersionProperty).CurrentValue = Guid.NewGuid();
+
+    private Task<bool> SaveRacingChangesAsync(TimeSeries series, CancellationToken cancellationToken) =>
+        _racingSaves.RunAsync(
+            async () =>
+            {
+                if (_racingSaves.ChecksVersionFirst)
+                {
+                    var loadedVersion = (Guid)_context.Entry(series).Property(TimeSeriesConfiguration.VersionProperty).OriginalValue!;
+                    var storedVersion = await _context.TimeSeries.AsNoTracking()
+                        .Where(s => s.Id == series.Id)
+                        .Select(s => (Guid?)EF.Property<Guid>(s, TimeSeriesConfiguration.VersionProperty))
+                        .FirstOrDefaultAsync(cancellationToken);
+
+                    if (storedVersion is null)
+                    {
+                        return false;
+                    }
+
+                    if (storedVersion != loadedVersion)
+                    {
+                        throw new ConcurrentChangeException(series.Id);
+                    }
+                }
+
+                try
+                {
+                    await _context.SaveChangesAsync(cancellationToken);
+                    return true;
+                }
+                catch (DbUpdateException exception) when (IsRace(exception))
+                {
+                    var stillExists = await _context.TimeSeries.AsNoTracking().AnyAsync(s => s.Id == series.Id, cancellationToken);
+                    return stillExists ? throw new ConcurrentChangeException(series.Id, exception) : false;
+                }
+            },
+            cancellationToken);
+
+    private static bool IsRace(DbUpdateException exception) =>
+        exception is DbUpdateConcurrencyException ||
+        exception.InnerException is SqlException
+        {
+            Number: 2601 or 2627 // duplicate key: another request inserted the same point at the same time
+                or 1205          // deadlock: SQL Server picked this request to give way
+        };
 }
