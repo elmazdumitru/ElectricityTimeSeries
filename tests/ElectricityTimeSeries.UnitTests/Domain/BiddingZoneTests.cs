@@ -10,7 +10,7 @@ public class BiddingZoneTests
     [InlineData("  No1 ")]
     public void From_trims_and_upper_cases(string code)
     {
-        Assert.Equal("NO1", BiddingZone.From(code).Value);
+        Assert.Equal("NO1", BiddingZone.From(code).ToString());
     }
 
     [Fact]
@@ -33,6 +33,17 @@ public class BiddingZoneTests
     public void IsKnown_recognizes_the_supported_zones(string code, bool expected)
     {
         Assert.Equal(expected, BiddingZone.From(code).IsKnown);
+    }
+
+    [Fact]
+    public void Default_zone_is_harmless_unknown_and_empty()
+    {
+        var zone = default(BiddingZone);
+
+        Assert.False(zone.IsKnown);
+        Assert.Equal(string.Empty, zone.ToString());
+        Assert.Equal(default, zone);
+        Assert.NotEqual(BiddingZone.From(""), zone);
     }
 
     [Fact]

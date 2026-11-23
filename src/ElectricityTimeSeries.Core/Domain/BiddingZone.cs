@@ -2,27 +2,20 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace ElectricityTimeSeries.Core.Domain;
 
-/// <summary>
-/// A bidding zone code, always trimmed and in upper case ("no1 " becomes "NO1").
-/// It may hold an unknown code, so the business rules can report it as a validation error;
-/// check <see cref="IsKnown"/> before relying on it.
-/// </summary>
-/// <remarks>
-/// As a record, equality and hash codes come from <see cref="Value"/>. Every instance is
-/// normalized when it is created, so that plain exact comparison is all that's needed.
-/// </remarks>
-public sealed record BiddingZone : IParsable<BiddingZone>
+/// <summary>A trimmed, upper-case zone code ("no1 " becomes "NO1"). It can hold an unknown code, so the
+/// rules can report it as an error; check <see cref="IsKnown"/> before relying on it.</summary>
+public readonly record struct BiddingZone : IParsable<BiddingZone>
 {
     public const string ConcatenatedKnownZones = KnownZones.Concatenated;
 
-    private BiddingZone(string value)
+    private readonly string? _code;
+
+    private BiddingZone(string code)
     {
-        Value = value;
+        _code = code;
     }
 
-    public string Value { get; }
-
-    public bool IsKnown => KnownZones.IsKnown(Value);
+    public bool IsKnown => _code is not null && KnownZones.IsKnown(_code);
 
     public static BiddingZone From(string code)
     {
@@ -34,20 +27,21 @@ public sealed record BiddingZone : IParsable<BiddingZone>
     public static BiddingZone Parse(string s, IFormatProvider? provider) => From(s);
 
     /// <summary>Succeeds for any text, known or not; only <c>null</c> fails.</summary>
-    public static bool TryParse([NotNullWhen(true)] string? s, IFormatProvider? provider, [MaybeNullWhen(false)] out BiddingZone result)
+    public static bool TryParse([NotNullWhen(true)] string? s, IFormatProvider? provider, out BiddingZone result)
     {
-        result = s is null ? null : From(s);
-        return result is not null;
+        result = s is null ? default : From(s);
+        return s is not null;
     }
 
-    public override string ToString() => Value;
+    public override string ToString() => _code ?? string.Empty;
 
     private static class KnownZones
     {
         public const string Concatenated =
             $"{Norway1}, {Norway2}, {Norway3}, {Norway4}, {Norway5}, " +
             $"{Sweden1}, {Sweden2}, {Sweden3}, {Sweden4}, " +
-            $"{Finland}, {Denmark1}, {Denmark2}, " +
+            $"{Finland}, " +
+            $"{Denmark1}, {Denmark2}, " +
             $"{Estonia}, {Latvia}, {Lithuania}, " +
             $"{Poland}, {GermanyLuxembourg}, {Netherlands}, {GreatBritain}";
 
@@ -55,7 +49,8 @@ public sealed record BiddingZone : IParsable<BiddingZone>
             value is
                 Norway1 or Norway2 or Norway3 or Norway4 or Norway5 or
                 Sweden1 or Sweden2 or Sweden3 or Sweden4 or
-                Finland or Denmark1 or Denmark2 or
+                Finland or 
+                Denmark1 or Denmark2 or
                 Estonia or Latvia or Lithuania or
                 Poland or GermanyLuxembourg or Netherlands or GreatBritain;
 

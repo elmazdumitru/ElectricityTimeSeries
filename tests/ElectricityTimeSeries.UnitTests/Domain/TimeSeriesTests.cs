@@ -16,7 +16,7 @@ public class TimeSeriesTests
         var series = TimeSeries.Create(definition);
 
         Assert.NotEqual(Guid.Empty, series.Id);
-        Assert.Equal("NO1", series.BiddingZone.Value);
+        Assert.Equal("NO1", series.BiddingZone.ToString());
         Assert.Equal(Midnight, series.Start);
         Assert.Equal(TimeSpan.Zero, series.Start.Offset);
         Assert.Equal(Midnight.AddHours(1), series.End);
@@ -32,18 +32,19 @@ public class TimeSeriesTests
 
         var series = TimeSeries.Create(definition);
 
-        Assert.Equal("DK1", series.ToBiddingZone?.Value);
+        Assert.Equal("DK1", series.ToBiddingZone?.ToString());
     }
 
     public static TheoryData<string, TimeSeriesDefinition> InvalidDefinitions => new()
     {
+        // A flow without a receiving zone, or consumption with one, can't be built at all, so isn't listed.
         { "biddingZone", Definition(zone: "XX1") },
-        { "toBiddingZone", Definition(TimeSeriesType.CrossBorderFlow, "NO1", toZone: null) },
         { "toBiddingZone", Definition(TimeSeriesType.CrossBorderFlow, "NO1", toZone: "no1") },
         { "toBiddingZone", Definition(TimeSeriesType.CrossBorderFlow, "NO1", toZone: "XX1") },
-        { "toBiddingZone", Definition(TimeSeriesType.Consumption, "NO1", toZone: "SE3") },
-        { "type", Definition((TimeSeriesType)42) },
         { "resolution", Definition(resolution: TimeSpan.FromMinutes(30)) },
+        { "points[0].value", Definition(TimeSeriesType.Production, points: [new TimeSeriesPoint(Midnight, -1m)]) },
+        { "points[0].value", Definition(points: [new TimeSeriesPoint(Midnight, 1.0000001m)]) },
+        { "points[0].value", Definition(TimeSeriesType.CrossBorderFlow, toZone: "SE3", points: [new TimeSeriesPoint(Midnight, -10_000_000_000_000m)]) },
         { "points", Definition(points: []) },
         { "points[0].value", Definition(points: [new TimeSeriesPoint(Midnight, -1m)]) },
         { "points[0].timestamp", Definition(points: [new TimeSeriesPoint(Midnight.AddMinutes(7), 1m)]) },
@@ -59,6 +60,24 @@ public class TimeSeriesTests
         var exception = Assert.Throws<DomainValidationException>(() => TimeSeries.Create(definition));
 
         Assert.Contains(expectedField, exception.Errors.Keys);
+    }
+
+    [Theory]
+    [InlineData(TimeSeriesType.Production, null)]
+    [InlineData(TimeSeriesType.Consumption, null)]
+    [InlineData(TimeSeriesType.CrossBorderFlow, "SE3")]
+    public void Create_takes_type_and_receiving_zone_from_the_kind_of_definition(TimeSeriesType type, string? expectedToZone)
+    {
+        var series = TimeSeries.Create(Definition(type, "NO1", toZone: expectedToZone));
+
+        Assert.Equal(type, series.Type);
+        Assert.Equal(expectedToZone, series.ToBiddingZone?.ToString());
+    }
+
+    [Fact]
+    public void Create_rejects_an_empty_definition_as_a_programming_mistake()
+    {
+        Assert.Throws<ArgumentException>(() => TimeSeries.Create(default));
     }
 
     [Fact]
@@ -82,7 +101,7 @@ public class TimeSeriesTests
 
         Assert.Equal(id, series.Id);
         Assert.Equal(TimeSeriesType.Production, series.Type);
-        Assert.Equal("SE3", series.BiddingZone.Value);
+        Assert.Equal("SE3", series.BiddingZone.ToString());
         Assert.Equal(2, series.Points.Count);
         Assert.Equal(Midnight.AddHours(2), series.End);
     }
@@ -94,7 +113,7 @@ public class TimeSeriesTests
 
         Assert.Throws<DomainValidationException>(() => series.Update(Definition(zone: "XX1")));
 
-        Assert.Equal("NO1", series.BiddingZone.Value);
+        Assert.Equal("NO1", series.BiddingZone.ToString());
         Assert.Equal(4, series.Points.Count);
     }
 
@@ -117,13 +136,26 @@ public class TimeSeriesTests
         Assert.Equal(expectedCount, points.Count);
     }
 
+    /// <summary>Defaults to a valid 4-point consumption series in NO1.</summary>
     private static TimeSeriesDefinition Definition(
         TimeSeriesType type = TimeSeriesType.Consumption,
         string zone = "NO1",
         string? toZone = null,
         TimeSpan? resolution = null,
-        IReadOnlyList<TimeSeriesPoint>? points = null) =>
-        new(type, BiddingZone.From(zone), toZone is null ? null : BiddingZone.From(toZone), resolution ?? FifteenMinutes, points ?? Points(Midnight, 4));
+        IReadOnlyList<TimeSeriesPoint>? points = null)
+    {
+        var biddingZone = BiddingZone.From(zone);
+        var step = resolution ?? FifteenMinutes;
+        var values = points ?? Points(Midnight, 4);
+
+        return type switch
+        {
+            TimeSeriesType.Production => new ProductionDefinition(biddingZone, step, values),
+            TimeSeriesType.Consumption => new ConsumptionDefinition(biddingZone, step, values),
+            TimeSeriesType.CrossBorderFlow => new CrossBorderFlowDefinition(biddingZone, BiddingZone.From(toZone ?? "SE3"), step, values),
+            _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
+        };
+    }
 
     private static List<TimeSeriesPoint> Points(DateTimeOffset start, int count, TimeSpan? step = null) =>
         Enumerable.Range(0, count)
