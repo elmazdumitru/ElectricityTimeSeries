@@ -1,4 +1,5 @@
-# Local development: the API at http://localhost:5020, in Development, with tokens from dotnet user-jwts.
+# Local development: the API at http://localhost:5020, in Development, with tokens from dotnet user-jwts,
+# and the Aspire dashboard at http://localhost:18888 showing its logs, traces and metrics.
 
 name: electricity-timeseries-local
 
@@ -9,6 +10,9 @@ services:
       dockerfile: Dockerfile
     environment:
       ASPNETCORE_ENVIRONMENT: Development
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://dashboard:18889
+    depends_on:
+      - dashboard
     ports:
       # Its own port, so it runs next to dotnet run (5021, 7244) and Visual Studio's container profile (5022).
       - "5020:8080"
@@ -16,3 +20,13 @@ services:
       # The dotnet user-jwts signing key lives in the host's user secrets.
       # On Linux/macOS, set USER_SECRETS_PATH=~/.microsoft/usersecrets first.
       - ${USER_SECRETS_PATH:-${APPDATA}/Microsoft/UserSecrets}:/home/app/.microsoft/usersecrets:ro
+
+  dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:13.6
+    environment:
+      # No login: it's only reachable from this machine (see the ports).
+      ASPIRE_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+    ports:
+      - "127.0.0.1:18888:18888"
+      # Where telemetry goes in. dotnet run and Visual Studio send here too.
+      - "127.0.0.1:4317:18889"
