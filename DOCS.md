@@ -235,7 +235,6 @@ ElectricityTimeSeries/
 ├── docker-compose.yml                         API in a container, for local development
 ├── docker-compose.sqlserver.yml               The same, stored in SQL Server
 ├── otel-collector.yaml                        Passes SQL Server's metrics to the dashboard
-├── azure-pipelines.yml                        Azure DevOps pipeline
 ├── .github/workflows/ci.yml                   GitHub Actions pipeline
 ├── scripts/New-DevToken.ps1                   Stores a development token for the .http file
 ├── scripts/Start-InMemory.ps1                 Runs the API in Docker, in memory
@@ -359,13 +358,7 @@ With `SqlServer`, the tests start one SQL Server container themselves through [T
 
 ### Continuous integration
 
-Two equivalent pipelines restore and build in Release, run the unit tests, run the integration tests twice (in-memory storage, then SQL Server in Docker), and publish the test results.
-
-**Azure DevOps** runs `azure-pipelines.yml` on a Microsoft-hosted Ubuntu agent. Results appear in the run's Tests tab. In this run, the SQL Server integration tests are applying the migrations to the database they've just started:
-
-![An Azure Pipelines run with every step passed, showing the SQL Server integration tests applying the migrations](docs/screenshots/azure-pipelines-run.png)
-
-**GitHub Actions** runs `.github/workflows/ci.yml` on every push to `main` and every pull request. Results appear on the run's summary page, built from xUnit's Markdown reports, with details of any failed test:
+GitHub Actions runs `.github/workflows/ci.yml` on every push to `main` and every pull request. It restores and builds in Release, runs the unit tests, runs the integration tests twice (in-memory storage, then SQL Server in Docker), and uploads the test results. Results appear on the run's summary page, built from xUnit's Markdown reports, with details of any failed test:
 
 ![A GitHub Actions run summary: 63 unit tests, and 132 integration tests both in memory and on SQL Server, all passed](docs/screenshots/github-actions-summary.png)
 

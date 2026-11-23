@@ -58,7 +58,7 @@ jobs:
           --report-xunit-trx --report-xunit-markdown --report-xunit-markdown-filename sql-server.md
           --results-directory TestResults/sql-server
 
-      # Show each run's results on the workflow's summary page, like the Tests tab in Azure DevOps.
+      # Show each run's results on the workflow's summary page.
       - name: Test summary
         if: always()
         run: |
