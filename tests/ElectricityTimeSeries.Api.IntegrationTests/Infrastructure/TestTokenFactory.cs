@@ -3,10 +3,7 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace ElectricityTimeSeries.Api.IntegrationTests.Infrastructure;
 
-/// <summary>
-/// Issues real, signed tokens for integration tests, the way the identity provider would:
-/// signed with the private key from <see cref="TestSigningKeys"/>.
-/// </summary>
+/// <summary>Issues real tokens, signed with the private key from <see cref="TestSigningKeys"/>.</summary>
 public sealed class TestTokenFactory
 {
     public const string Audience = "electricity-timeseries-api";

@@ -5,11 +5,7 @@ using System.Text.Json;
 
 namespace ElectricityTimeSeries.Api.IntegrationTests.Infrastructure;
 
-/// <summary>
-/// Stands in for the identity provider's web server. The API downloads its settings and
-/// public keys from here exactly as it would from Keycloak or Entra ID, but the requests
-/// never leave the test process.
-/// </summary>
+/// <summary>Stands in for the identity provider's web server, so the API's downloads never leave the test process.</summary>
 public sealed class FakeIdentityProvider : HttpMessageHandler
 {
     public const string Issuer = "https://identity-provider.test/realms/electricity-timeseries";

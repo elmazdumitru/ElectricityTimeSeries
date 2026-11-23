@@ -1,3 +1,4 @@
+using ElectricityTimeSeries.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -6,25 +7,33 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ElectricityTimeSeries.Api.IntegrationTests.Infrastructure;
 
-/// <summary>
-/// Hosts the real API in memory, set up the way it is delivered: it trusts an identity
-/// provider (Authority + audience) and downloads that provider's public keys at runtime.
-///
-/// The only test-specific setting is where those downloads go: to <see cref="FakeIdentityProvider"/>
-/// inside the test process, instead of over the network.
-/// </summary>
+/// <summary>The real API in memory, set up as delivered, except that its key downloads go to
+/// <see cref="FakeIdentityProvider"/> instead of the network.</summary>
 public class ApiFactory : WebApplicationFactory<Program>
 {
+    private readonly TestDatabase _database;
+
+    public ApiFactory(TestDatabase database)
+    {
+        _database = database;
+        IdentityProvider = new FakeIdentityProvider(SigningKeys);
+        Tokens = new TestTokenFactory(SigningKeys);
+    }
+
     public TestSigningKeys SigningKeys { get; } = new();
 
     public FakeIdentityProvider IdentityProvider { get; }
 
     public TestTokenFactory Tokens { get; }
 
-    public ApiFactory()
+    /// <summary>Sets up the storage (applies the migrations), unless it's a reused, already migrated database.</summary>
+    public async Task PrepareAsync(CancellationToken cancellationToken)
     {
-        IdentityProvider = new FakeIdentityProvider(SigningKeys);
-        Tokens = new TestTokenFactory(SigningKeys);
+        if (!_database.IsMigrated)
+        {
+            await Services.InitializeStorageAsync(cancellationToken);
+            _database.MarkMigrated();
+        }
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -32,20 +41,24 @@ public class ApiFactory : WebApplicationFactory<Program>
         // Neither user secrets nor appsettings.Development.json are loaded in this environment.
         builder.UseEnvironment("Testing");
 
+        // The in-memory test server has no HTTPS port, so HTTPS redirection warns on every request.
+        builder.UseSetting("Logging:LogLevel:Microsoft.AspNetCore.HttpsPolicy", "Error");
+
+        builder.UseSetting($"{StorageOptions.Section}:{nameof(StorageOptions.Provider)}", _database.Provider.ToString());
+        builder.UseSetting($"{StorageOptions.Section}:{nameof(StorageOptions.ConnectionString)}", _database.ConnectionString);
+
         builder.ConfigureTestServices(services =>
         {
             // Makes test-only controllers (such as AuthorizationProbeController) part of the API.
             services.AddControllers().AddApplicationPart(typeof(ApiFactory).Assembly);
 
-            // Configure (not PostConfigure): these values must be in place before the JWT bearer
-            // handler's own setup runs, because that is where it creates the key downloader.
+            // Configure, not PostConfigure: these must be set before the JWT handler creates its key downloader.
             services.Configure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
             {
-                // Same settings as a delivered environment would put in configuration...
                 options.Authority = FakeIdentityProvider.Issuer;
                 options.TokenValidationParameters.ValidAudience = TestTokenFactory.Audience;
 
-                // ...plus the one test-only setting: answer the API's downloads in memory.
+                // The only test-only setting: answer the key downloads in memory.
                 options.BackchannelHttpHandler = IdentityProvider;
             });
         });
