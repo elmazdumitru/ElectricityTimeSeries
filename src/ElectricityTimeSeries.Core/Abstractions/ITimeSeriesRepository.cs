@@ -6,8 +6,9 @@ public interface ITimeSeriesRepository
 {
     Task<TimeSeries?> GetAsync(Guid id, CancellationToken cancellationToken);
 
-    /// <summary>Results are ordered by start time.</summary>
-    Task<IReadOnlyList<TimeSeries>> FindAsync(TimeSeriesFilter filter, CancellationToken cancellationToken);
+    /// <summary>The matching points, ordered by series start, series id and time; <paramref name="skip"/> and
+    /// <paramref name="take"/> count points. A point matches when its own period overlaps the interval.</summary>
+    Task<TimeSeriesPage> FindPointsAsync(TimeSeriesFilter filter, int skip, int take, CancellationToken cancellationToken);
 
     /// <summary>Throws <see cref="OverlappingSeriesException"/> if a stored series of the same type and zones overlaps it.</summary>
     Task AddAsync(TimeSeries series, CancellationToken cancellationToken);

@@ -106,25 +106,6 @@ public class TimeSeriesTests
         Assert.Equal(4, series.Points.Count);
     }
 
-    [Theory]
-    [InlineData(null, null, 4)]
-    [InlineData(0, 60, 4)]
-    [InlineData(15, 45, 2)]
-    [InlineData(20, 40, 2)] // Points that only partly overlap the interval are included.
-    [InlineData(60, 120, 0)]
-    [InlineData(null, 30, 2)]
-    [InlineData(30, null, 2)]
-    public void PointsWithin_returns_points_overlapping_the_interval(int? fromMinutes, int? toMinutes, int expectedCount)
-    {
-        var series = TimeSeries.Create(Definition());
-        DateTimeOffset? from = fromMinutes is null ? null : Midnight.AddMinutes(fromMinutes.Value);
-        DateTimeOffset? to = toMinutes is null ? null : Midnight.AddMinutes(toMinutes.Value);
-
-        var points = series.PointsWithin(from, to);
-
-        Assert.Equal(expectedCount, points.Count);
-    }
-
     /// <summary>Defaults to a valid 4-point consumption series in NO1.</summary>
     private static TimeSeriesDefinition Definition(
         TimeSeriesType type = TimeSeriesType.Consumption,

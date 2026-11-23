@@ -1,3 +1,4 @@
+using System.Globalization;
 using ElectricityTimeSeries.Api.Authorization;
 using ElectricityTimeSeries.Api.Contracts;
 using ElectricityTimeSeries.Core.Services;
@@ -12,6 +13,8 @@ namespace ElectricityTimeSeries.Api.Controllers;
 [ProducesResponseType(StatusCodes.Status403Forbidden)]
 public sealed class TimeSeriesController : ControllerBase
 {
+    private const string TotalCountHeader = "X-Total-Count";
+
     private readonly TimeSeriesService _service;
 
     public TimeSeriesController(TimeSeriesService service)
@@ -19,7 +22,8 @@ public sealed class TimeSeriesController : ControllerBase
         _service = service;
     }
 
-    /// <summary>Finds time series. With a time interval, each series only holds the points inside it.</summary>
+    /// <summary>Finds time series points, a page at a time: skip and take count points, so a series can be split
+    /// across pages. The X-Total-Count header holds how many points match in all.</summary>
     [HttpGet]
     [Authorize(Policy = Policies.CanReadTimeSeries)]
     [ProducesResponseType<IReadOnlyList<TimeSeriesResponse>>(StatusCodes.Status200OK)]
@@ -27,8 +31,9 @@ public sealed class TimeSeriesController : ControllerBase
     public async Task<ActionResult<IReadOnlyList<TimeSeriesResponse>>> Search(
         [FromQuery] TimeSeriesQuery query, CancellationToken cancellationToken)
     {
-        var results = await _service.SearchAsync(query.ToFilter(), cancellationToken);
-        return results.Select(r => TimeSeriesResponse.From(r.Series, r.Points)).ToList();
+        var page = await _service.SearchAsync(query.ToFilter(), query.Skip, query.Take, cancellationToken);
+        Response.Headers[TotalCountHeader] = page.TotalPoints.ToString(CultureInfo.InvariantCulture);
+        return page.Series.Select(TimeSeriesResponse.From).ToList();
     }
 
     [HttpGet("{id:guid}")]

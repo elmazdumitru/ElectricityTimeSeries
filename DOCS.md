@@ -144,7 +144,7 @@ A trace shows the request, the service and repository calls inside it, and each 
 
 | Method | URL | Scope | Result |
 |---|---|---|---|
-| `GET` | `/api/time-series?biddingZone=&type=&from=&to=` | `TimeSeries.Read` | `200` with the matching series |
+| `GET` | `/api/time-series?biddingZone=&type=&from=&to=&skip=&take=` | `TimeSeries.Read` | `200` with one page of matching points, grouped by series |
 | `GET` | `/api/time-series/{id}` | `TimeSeries.Read` | `200`, or `404` |
 | `POST` | `/api/time-series` | `TimeSeries.Write` | `201` with a `Location` header |
 | `PUT` | `/api/time-series/{id}` | `TimeSeries.Write` | `200` with the replaced series, `404`, or `409` if changed at the same moment by another request |
@@ -184,6 +184,8 @@ Responses leave out empty fields, so production and consumption series have no `
 
 - `biddingZone` matches series in that zone, and flows into or out of it.
 - `from` (inclusive) and `to` (exclusive) return the series that have data in that interval, with **only the points inside it**. A point that partly overlaps the interval is included.
+- **Paging counts points, not series.** `take` (1 to 1000, default 1000) is how many points come back, and `skip` (default 0) how many to pass over. Points come in a fixed order: by series start, then series id, then time. So a series can be split across pages: each part has the series' own `start` and `end`, with only its points on that page. Fewer than `take` points means the last page.
+- The `X-Total-Count` response header says how many points match in all. It's counted again on every page, so it shows the data at the moment of that request; if the data changes between pages, a page can skip or repeat a few points.
 - All filters are optional and can be combined. Send times with a time zone (`Z` or an offset such as `%2B01:00`, where `%2B` is a URL-encoded `+`); see [Assumptions](#assumptions) for times without one.
 
 ### Validation
@@ -352,5 +354,5 @@ GitHub Actions runs `.github/workflows/ci.yml` on every push to `main` and every
 - **Time zones:** clients may send any offset; times are stored and returned in UTC. A time sent without an offset is read as the server's local time (UTC in the Docker container), so clients should always send one.
 - **No overlaps:** only one series may cover a given type, zone (or zone pair, in that order) and time. A create or update that would overlap gets `409 Conflict`, with the ids of the series in the way under `overlappingIds`. Series that only touch (one ends at 10:00, the next starts at 10:00) don't overlap.
 - **Simultaneous changes:** when two requests change or delete the same series at the same moment, one is saved and the other gets `409 Conflict` (get the series again and retry); a change is never half-applied. Each series has a hidden version stamp for this, kept in storage only. There is no `ETag` / `If-Match` yet, so a client that read a series earlier and saves later still overwrites changes made in between.
-- **No paging:** a search returns every match. Clients are expected to narrow it with filters.
+- **Paging is by position** (`skip` and `take`), not by a cursor: simple for clients, at the cost of the shifts described in [Searching](#searching) when the data changes between pages. The count and the page are two separate queries, not one transaction.
 - **With in-memory storage, data is lost on restart.**

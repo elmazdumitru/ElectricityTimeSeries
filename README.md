@@ -41,7 +41,7 @@ Every endpoint needs the token from step 2.
 |---|---|
 | `POST /api/time-series` | Creates a series |
 | `GET /api/time-series/{id}` | Gets one series |
-| `GET /api/time-series?biddingZone=NO1&type=Consumption&from=…&to=…` | Searches; every filter is optional, and only the points between `from` and `to` come back |
+| `GET /api/time-series?biddingZone=NO1&type=Consumption&from=…&to=…&skip=0&take=1000` | Searches; every filter is optional, only the points between `from` and `to` come back, up to 1000 points per page (`X-Total-Count` has the total) |
 | `PUT /api/time-series/{id}` | Replaces a series |
 | `DELETE /api/time-series/{id}` | Deletes a series |
 

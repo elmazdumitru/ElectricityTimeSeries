@@ -23,38 +23,85 @@ internal sealed class TimeSeriesRepository : ITimeSeriesRepository
         return await _context.TimeSeries.FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<TimeSeries>> FindAsync(TimeSeriesFilter filter, CancellationToken cancellationToken)
+    public async Task<TimeSeriesPage> FindPointsAsync(TimeSeriesFilter filter, int skip, int take, CancellationToken cancellationToken)
     {
-        using var activity = StartActivity("TimeSeriesRepository.Find");
-        var query = _context.TimeSeries.AsNoTracking();
+        using var activity = StartActivity("TimeSeriesRepository.FindPoints");
+        var series = _context.TimeSeries.AsNoTracking();
 
         if (filter.BiddingZone is { } zone)
         {
-            query = query.Where(s => s.BiddingZone == zone || s.ToBiddingZone == zone);
+            series = series.Where(s => s.BiddingZone == zone || s.ToBiddingZone == zone);
         }
 
         if (filter.Type is { } type)
         {
-            query = query.Where(s => s.Type == type);
+            series = series.Where(s => s.Type == type);
         }
 
-        // A series matches when its period overlaps the requested interval.
+        // Narrows down to the series whose period overlaps the interval, then to the points whose period does.
         if (filter.From is { } from)
         {
-            query = query.Where(s => s.End > from);
+            series = series.Where(s => s.End > from);
         }
 
         if (filter.To is { } to)
         {
-            query = query.Where(s => s.Start < to);
+            series = series.Where(s => s.Start < to);
         }
 
-        var matches = await query
-            .OrderBy(s => s.Start)
-            .ThenBy(s => s.Id)
+        var points = series.SelectMany(s => s.Points, (s, p) => new { Series = s, Point = p });
+
+        if (filter.From is { } pointsFrom)
+        {
+            // A point matches when it ends after 'from'. SQL Server can't add a resolution to a time, so there it
+            // counts whole minutes instead, which is exact because points start on a whole minute.
+            points = _context.Database.IsInMemory()
+                ? points.Where(x => x.Point.Timestamp + x.Series.Resolution > pointsFrom)
+                : points.Where(x => EF.Functions.DateDiffMinute(x.Point.Timestamp, pointsFrom)
+                    < EF.Functions.DateDiffMinute(TimeSpan.Zero, x.Series.Resolution));
+        }
+
+        if (filter.To is { } pointsTo)
+        {
+            points = points.Where(x => x.Point.Timestamp < pointsTo);
+        }
+
+        // Two queries, not one transaction: the total is the count at the moment of the request.
+        var total = await points.CountAsync(cancellationToken);
+        var rows = await points
+            .OrderBy(x => x.Series.Start)
+            .ThenBy(x => x.Series.Id)
+            .ThenBy(x => x.Point.Timestamp)
+            .Skip(skip)
+            .Take(take)
+            .Select(x => new
+            {
+                x.Series.Id,
+                x.Series.Type,
+                x.Series.BiddingZone,
+                x.Series.ToBiddingZone,
+                x.Series.Resolution,
+                x.Series.Start,
+                x.Series.End,
+                x.Point.Timestamp,
+                x.Point.Value,
+            })
             .ToListAsync(cancellationToken);
-        activity?.SetTag("timeseries.count", matches.Count);
-        return matches;
+
+        var slices = rows
+            .GroupBy(r => r.Id)
+            .Select(g =>
+            {
+                var first = g.First();
+                return new TimeSeriesSlice(
+                    first.Id, first.Type, first.BiddingZone, first.ToBiddingZone, first.Resolution, first.Start, first.End,
+                    g.Select(r => new TimeSeriesPoint(r.Timestamp, r.Value)).ToList());
+            })
+            .ToList();
+
+        activity?.SetTag("timeseries.count", slices.Count);
+        activity?.SetTag("timeseries.points.total", total);
+        return new TimeSeriesPage(slices, total);
     }
 
     public async Task AddAsync(TimeSeries series, CancellationToken cancellationToken)

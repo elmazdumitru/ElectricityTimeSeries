@@ -83,6 +83,10 @@ Authorization: Bearer {{token}}
 GET {{host}}/api/time-series?biddingZone=NO1&from=2025-11-22T01:15:00%2B01:00&to=2025-11-22T01:45:00%2B01:00
 Authorization: Bearer {{token}}
 
+### Search, a page at a time: skip and take count points (X-Total-Count has the total)
+GET {{host}}/api/time-series?skip=2&take=3
+Authorization: Bearer {{token}}
+
 
 #################### Update and delete ####################
 
@@ -160,6 +164,6 @@ Content-Type: application/json
   ]
 }
 
-### 400: "from" must be earlier than "to"
-GET {{host}}/api/time-series?from=2025-11-22T02:00:00Z&to=2025-11-22T01:00:00Z
+### 400: "from" must be earlier than "to", and "take" is at most 1000
+GET {{host}}/api/time-series?from=2025-11-22T02:00:00Z&to=2025-11-22T01:00:00Z&take=5000
 Authorization: Bearer {{token}}

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -61,11 +62,16 @@ public abstract class TimeSeriesApiTest : IsolatedApiTest
         return await ReadSeries(response);
     }
 
-    protected async Task<SeriesResult[]> Search(string query = "")
+    protected async Task<SeriesResult[]> Search(string query = "") => (await SearchPage(query)).Results;
+
+    /// <summary>One page of a search, with the X-Total-Count header: how many points match in all.</summary>
+    protected async Task<(SeriesResult[] Results, int Total)> SearchPage(string query = "")
     {
         var response = await Client.GetAsync($"{BaseUrl}?{query}", Ct);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        return (await response.Content.ReadFromJsonAsync<SeriesResult[]>(Json, Ct))!;
+
+        var total = int.Parse(Assert.Single(response.Headers.GetValues("X-Total-Count")), CultureInfo.InvariantCulture);
+        return ((await response.Content.ReadFromJsonAsync<SeriesResult[]>(Json, Ct))!, total);
     }
 
     protected static async Task<SeriesResult> ReadSeries(HttpResponseMessage response) =>

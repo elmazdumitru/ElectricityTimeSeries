@@ -3,11 +3,11 @@ using ElectricityTimeSeries.Core.Domain;
 
 namespace ElectricityTimeSeries.Core.Services;
 
-/// <summary>A series found by a search, with only the points inside the requested time interval.</summary>
-public sealed record TimeSeriesSearchResult(TimeSeries Series, IReadOnlyList<TimeSeriesPoint> Points);
-
 public sealed class TimeSeriesService
 {
+    /// <summary>The most points a search returns at once, and the default.</summary>
+    public const int MaxPageSize = 1000;
+
     private readonly ITimeSeriesRepository _repository;
 
     public TimeSeriesService(ITimeSeriesRepository repository)
@@ -30,7 +30,8 @@ public sealed class TimeSeriesService
         return await _repository.GetAsync(id, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<TimeSeriesSearchResult>> SearchAsync(TimeSeriesFilter filter, CancellationToken cancellationToken)
+    /// <summary>One page of matching points; <paramref name="skip"/> and <paramref name="take"/> count points, not series.</summary>
+    public async Task<TimeSeriesPage> SearchAsync(TimeSeriesFilter filter, int skip, int take, CancellationToken cancellationToken)
     {
         using var activity = CoreTelemetry.StartActivity("TimeSeriesService.Search");
         var errors = new ValidationErrors();
@@ -50,6 +51,16 @@ public sealed class TimeSeriesService
             errors.Add("from", "Must be earlier than 'to'.");
         }
 
+        if (skip < 0)
+        {
+            errors.Add("skip", "Must be 0 or more.");
+        }
+
+        if (take is < 1 or > MaxPageSize)
+        {
+            errors.Add("take", $"Must be between 1 and {MaxPageSize}.");
+        }
+
         errors.ThrowIfAny();
 
         var normalized = filter with
@@ -58,12 +69,9 @@ public sealed class TimeSeriesService
             To = filter.To?.ToUniversalTime(),
         };
 
-        var matches = await _repository.FindAsync(normalized, cancellationToken);
-        activity?.SetTag("timeseries.count", matches.Count);
-
-        return matches
-            .Select(series => new TimeSeriesSearchResult(series, series.PointsWithin(normalized.From, normalized.To)))
-            .ToList();
+        var page = await _repository.FindPointsAsync(normalized, skip, take, cancellationToken);
+        activity?.SetTag("timeseries.count", page.Series.Count);
+        return page;
     }
 
     public async Task<TimeSeries?> UpdateAsync(Guid id, TimeSeriesDefinition definition, CancellationToken cancellationToken)

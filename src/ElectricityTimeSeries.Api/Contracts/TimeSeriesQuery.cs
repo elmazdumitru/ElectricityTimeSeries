@@ -1,5 +1,6 @@
 using ElectricityTimeSeries.Core.Abstractions;
 using ElectricityTimeSeries.Core.Domain;
+using ElectricityTimeSeries.Core.Services;
 
 namespace ElectricityTimeSeries.Api.Contracts;
 
@@ -15,6 +16,12 @@ public sealed class TimeSeriesQuery
 
     /// <summary>End of the time interval (exclusive). Must include a time zone.</summary>
     public DateTimeOffset? To { get; init; }
+
+    /// <summary>How many matching points to skip. Counts points, not series.</summary>
+    public int Skip { get; init; }
+
+    /// <summary>How many points to return, at most 1000 (the default). Fewer means the last page.</summary>
+    public int Take { get; init; } = TimeSeriesService.MaxPageSize;
 
     public TimeSeriesFilter ToFilter() => new(BiddingZone, Type, From, To);
 }
