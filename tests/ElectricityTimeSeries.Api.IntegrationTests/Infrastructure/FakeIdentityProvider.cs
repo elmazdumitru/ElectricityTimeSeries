@@ -10,12 +10,19 @@ namespace ElectricityTimeSeries.Api.IntegrationTests.Infrastructure;
 /// public keys from here exactly as it would from Keycloak or Entra ID, but the requests
 /// never leave the test process.
 /// </summary>
-public sealed class FakeIdentityProvider(TestSigningKeys keys) : HttpMessageHandler
+public sealed class FakeIdentityProvider : HttpMessageHandler
 {
     public const string Issuer = "https://identity-provider.test/realms/electricity-timeseries";
 
     private const string MetadataPath = "/realms/electricity-timeseries/.well-known/openid-configuration";
     private const string KeysPath = "/realms/electricity-timeseries/protocol/openid-connect/certs";
+
+    private readonly TestSigningKeys _keys;
+
+    public FakeIdentityProvider(TestSigningKeys keys)
+    {
+        _keys = keys;
+    }
 
     /// <summary>Every URL the API requested, so tests can check the keys were actually downloaded.</summary>
     public ConcurrentQueue<Uri> Requests { get; } = new();
@@ -35,7 +42,7 @@ public sealed class FakeIdentityProvider(TestSigningKeys keys) : HttpMessageHand
                 jwks_uri = KeysUrl.ToString(),
                 id_token_signing_alg_values_supported = new[] { "RS256" },
             })),
-            KeysPath => Json(keys.ToJwksJson()),
+            KeysPath => Json(_keys.ToJwksJson()),
             _ => new HttpResponseMessage(HttpStatusCode.NotFound),
         };
 
