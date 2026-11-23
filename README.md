@@ -7,7 +7,7 @@ A small REST API built with C# and ASP.NET Core for managing electricity market 
 ## Requirements
 
 - [.NET 11 SDK](https://dotnet.microsoft.com/download) (`global.json` requires 11.0.100 or any later 11.0 SDK)
-- [Docker](https://www.docker.com/) with Docker Compose, optional: only for running the API in a container
+- [Docker](https://www.docker.com/) with Docker Compose, optional: for running the API in a container, and for running the integration tests against SQL Server
 
 ## Running the API
 
@@ -110,6 +110,8 @@ A **time series** is a block of evenly spaced values for one bidding zone, for e
 | `points` | The values. Each covers the period from its `timestamp` to `timestamp` + `resolution`. |
 | `start`, `end` | Returned by the API: when the first point starts and the last point ends |
 
+Responses leave out empty fields, so production and consumption series have no `toBiddingZone`.
+
 ### Searching
 
 - `biddingZone` matches series in that zone, and flows into or out of it.
@@ -123,7 +125,6 @@ Requests that break a rule return `400 Bad Request` with the list of invalid fie
 - Missing or `null` fields are reported by name, all at once, for example `resolution` or `points[0].value`. A wrong value type (text where a number is expected) is reported on the field itself, for example `$.points[0].timestamp`.
 - `type` is read first, because it decides which fields are expected. A missing or unknown `type` is reported on the whole object (`$`). Its values are case-sensitive: `Consumption`, not `consumption`.
 - Only `CrossBorderFlow` takes a `toBiddingZone`; for the other types it's rejected as an unknown field (`$.toBiddingZone`).
-
 - The bidding zones must be known (see [Assumptions](#assumptions)). A flow needs a different receiving zone; other types can't have one.
 - The resolution must be 15 minutes or 1 hour.
 - There must be between 1 and 35,136 points (one year of 15-minute values).
@@ -143,9 +144,12 @@ ElectricityTimeSeries/
 ├── Directory.Packages.props                   Every package version, in one place
 ├── NuGet.config                               Package sources: nuget.org only
 ├── .editorconfig                              Code style
+├── dotnet-tools.json                          Local tools: dotnet-ef, for migrations
 ├── Dockerfile                                 API container image
 ├── docker-compose.yml                         API in a container, for local development
+├── azure-pipelines.yml                        Azure DevOps pipeline
 ├── .github/workflows/ci.yml                   GitHub Actions pipeline
+├── scripts/New-DevToken.ps1                   Stores a development token for the .http file
 ├── src/
 │   ├── ElectricityTimeSeries.Api/             Presentation: controllers, request/response contracts, startup wiring
 │   ├── ElectricityTimeSeries.Core/            Domain + application: entities, business rules, services, abstractions
@@ -174,7 +178,7 @@ The solution follows **Clean Architecture** principles, built on the **Dependenc
 ### Key design decisions
 
 - **Core owns the abstractions.** Core defines what it needs (for example a repository interface), and Infrastructure provides it. Business logic has no knowledge of how or where data is stored, so it can be unit tested without a database, and the storage technology can be replaced without touching Core or the API.
-- **The API does not know about storage.** Controllers depend only on Core services and types. All Infrastructure types are `internal`; the only public member is the `AddInfrastructure()` registration method. Api references Infrastructure solely so that `Program.cs` can act as the *composition root*, the single place where implementations are wired to abstractions. The compiler prevents any other use.
+- **The API does not know about storage.** Controllers depend only on Core services and types. All Infrastructure types are `internal`; the only public ones are `AddInfrastructure(configuration)`, `InitializeStorageAsync()` (applies migrations) and the `StorageOptions` settings. Api references Infrastructure solely so that `Program.cs` can act as the *composition root*, the single place where implementations are wired to abstractions. The compiler prevents any other use.
 - **Each layer registers its own services** through an extension method (`AddCore()`, `AddInfrastructure()`), which keeps `Program.cs` short and keeps each layer's internals private.
 - **API contracts are separate from domain entities.** Request and response classes live in the Api project, so the public HTTP contract can change independently of the domain model and the storage model.
 - **Consistent error responses.** Errors are returned as RFC 9457 Problem Details (`AddProblemDetails`, `UseExceptionHandler`, `UseStatusCodePages`).
@@ -210,7 +214,7 @@ The tests are split into two levels. By default neither needs Docker, an identit
 
 | Level | What it runs against | Tokens |
 |---|---|---|
-| **Unit** | Isolated classes: the time series rules, `HasScope()`, `ScopeAuthorizationHandler` | none |
+| **Unit** | Isolated classes: the time series rules, `BiddingZone`, `HasScope()`, `ScopeAuthorizationHandler` | none |
 | **Integration** | The full API hosted in memory with `WebApplicationFactory`, called over HTTP | signed by the test project with its own key pair |
 
 ```powershell
@@ -221,7 +225,7 @@ dotnet test
 
 - The API runs in a dedicated `Testing` environment, so user secrets and `appsettings.Development.json` are never loaded. The tests behave the same on every machine and in CI.
 - The API is set up **as it is delivered**: it trusts an identity provider (`Authority` plus audience) and downloads that provider's public keys when it needs them. The only test-specific setting is where those downloads go: `FakeIdentityProvider`, which answers them inside the test process.
-- Each test run creates a **public/private key pair** (`TestSigningKeys`). `TestTokenFactory` signs tokens with the private key; the API only ever sees the public key, published by the fake identity provider in the same format Keycloak or Entra ID use. Nothing secret is shared between the tests and the API.
+- Each test's API gets its own **public/private key pair** (`TestSigningKeys`), created in memory and gone when the test ends, so CI needs no keys or secrets. `TestTokenFactory` signs tokens with the private key; the API only ever sees the public key, published by the fake identity provider in the same format Keycloak or Entra ID use. Nothing secret is shared between the tests and the API.
 - Requests go through the API's real token checks, so the tests also cover expired, wrongly addressed, wrongly signed and tampered tokens, and the trick of signing with the public key as if it were a password.
 - The time series endpoints are tested with raw JSON requests, so the tests also pin down the public JSON format: field names, type names and `PT15M` durations. They cover each operation, searching, every validation rule, `404` for unknown ids, and that each endpoint needs the right scope.
 - Each test gets its own API instance with its own, empty storage (`IsolatedApiTest`), created before the test and removed after it. So every test is repeatable, can check exact results ("the search returns exactly these two"), and runs in any order or in parallel. Tests that don't need a clean slate can share one API and database explicitly (`SharedApiFixture`); the authorization tests do, since they store nothing.
@@ -238,11 +242,16 @@ $env:TEST_STORAGE = "SqlServer"; dotnet test  # SQL Server in Docker
 
 With `SqlServer`, the tests start one SQL Server container themselves through [Testcontainers](https://dotnet.testcontainers.org/) and remove it when the run ends, so only Docker needs to be running. Starting SQL Server is the slow part, so the one server is shared by the whole run; isolation comes from giving every test an empty database inside it that no other test is using. Creating and migrating a database takes seconds, so they are pooled: a test borrows one, and afterwards its tables are emptied and it goes back to the pool (or is dropped, if emptying fails). Only as many databases are created as tests run at the same time.
 
+`ConcurrencyTests` fire requests at the same series in parallel, which matters most against SQL Server: parallel deletes give one `204` and otherwise `404`, parallel updates leave exactly one complete version (never a mix), and a write that loses a race gets `409 Conflict` instead of failing.
+
 **Not covered by the integration tests:** the network connection to a real identity provider (its address, HTTPS, and the provider's own setup).
 
 ### Continuous integration
 
 Two equivalent pipelines restore and build in Release, run the unit tests, run the integration tests twice (in-memory storage, then SQL Server in Docker), and publish the test results:
+
+- **Azure DevOps:** `azure-pipelines.yml`, on a Microsoft-hosted Ubuntu agent. Results appear in the run's Tests tab.
+- **GitHub Actions:** `.github/workflows/ci.yml`, on every push to `main` and every pull request. Results appear on the run's summary page, built from xUnit's Markdown reports, with details of any failed test.
 
 ## Assumptions
 
