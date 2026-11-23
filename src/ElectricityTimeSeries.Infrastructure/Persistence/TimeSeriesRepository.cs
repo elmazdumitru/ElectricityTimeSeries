@@ -80,12 +80,31 @@ internal sealed class TimeSeriesRepository : ITimeSeriesRepository
     public async Task<bool> DeleteAsync(TimeSeries series, CancellationToken cancellationToken)
     {
         using var activity = StartActivity("TimeSeriesRepository.Delete", series.Id);
-        _context.TimeSeries.Remove(series);
-        return await SaveRacingChangesAsync(series, cancellationToken);
+        if (_context.Database.IsInMemory())
+        {
+            _context.TimeSeries.Remove(series);
+            return await SaveRacingChangesAsync(series, cancellationToken);
+        }
+
+        // One statement: the database deletes the points (ON DELETE CASCADE), not EF one by one.
+        var loadedVersion = LoadedVersion(series);
+        var deleted = await _context.TimeSeries
+            .Where(s => s.Id == series.Id && EF.Property<Guid>(s, TimeSeriesConfiguration.VersionProperty) == loadedVersion)
+            .ExecuteDeleteAsync(cancellationToken);
+        if (deleted > 0)
+        {
+            return true;
+        }
+
+        var stillExists = await _context.TimeSeries.AsNoTracking().AnyAsync(s => s.Id == series.Id, cancellationToken);
+        return stillExists ? throw new ConcurrentChangeException(series.Id) : false;
     }
 
     private void StampNewVersion(TimeSeries series) =>
         _context.Entry(series).Property(TimeSeriesConfiguration.VersionProperty).CurrentValue = Guid.NewGuid();
+
+    private Guid LoadedVersion(TimeSeries series) =>
+        (Guid)_context.Entry(series).Property(TimeSeriesConfiguration.VersionProperty).OriginalValue!;
 
     private Task<bool> SaveRacingChangesAsync(TimeSeries series, CancellationToken cancellationToken) =>
         _racingSaves.RunAsync(
@@ -93,7 +112,7 @@ internal sealed class TimeSeriesRepository : ITimeSeriesRepository
             {
                 if (_racingSaves.ChecksVersionFirst)
                 {
-                    var loadedVersion = (Guid)_context.Entry(series).Property(TimeSeriesConfiguration.VersionProperty).OriginalValue!;
+                    var loadedVersion = LoadedVersion(series);
                     var storedVersion = await ReadStoredVersionAsync(series.Id, cancellationToken);
 
                     if (storedVersion is null)
