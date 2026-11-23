@@ -27,7 +27,7 @@ Docker isn't needed: the API keeps its data in memory.
    dotnet dev-certs https --trust
    ```
 
-4. Open `src/ElectricityTimeSeries.Api/ElectricityTimeSeries.Api.http`, pick the **local** environment at the top right, and click **Send request** above any request. There's one for every endpoint and for the common errors. Here a new production series has just come back as `201 Created`; the environment list shows `local` next to the others:
+4. Open `src/ElectricityTimeSeries.Api/ElectricityTimeSeries.Api.http`, pick the **local** environment at the top right, and click **Send request** above any request. There's one for every endpoint and for the common errors. Here a new production series has just come back as `201 Created`; the environment list shows `local` next to `docker`:
 
    ![The .http file in Visual Studio with its environment list open, and a 201 Created response for a new production series](docs/screenshots/visual-studio-http-file.png)
 
@@ -41,7 +41,7 @@ Every endpoint needs the token from step 2.
 |---|---|
 | `POST /api/time-series` | Creates a series |
 | `GET /api/time-series/{id}` | Gets one series |
-| `GET /api/time-series?biddingZone=NO1&type=Consumption&from=…&to=…` | Searches; every filter is optional, and only the points between `from` and `to` come back |
+| `GET /api/time-series?biddingZone=NO1&type=Consumption&from=…&to=…&skip=0&take=1000` | Searches; every filter is optional, only the points between `from` and `to` come back, up to 1000 points per page (`X-Total-Count` has the total) |
 | `PUT /api/time-series/{id}` | Replaces a series |
 | `DELETE /api/time-series/{id}` | Deletes a series |
 

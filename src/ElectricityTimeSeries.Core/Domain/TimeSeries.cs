@@ -41,12 +41,6 @@ public sealed class TimeSeries
     /// <summary>Replaces the whole contents of the series, keeping its id.</summary>
     public void Update(TimeSeriesDefinition definition) => Apply(definition);
 
-    /// <summary>Points whose period overlaps from (inclusive) to (exclusive). A null bound means no limit.</summary>
-    public IReadOnlyList<TimeSeriesPoint> PointsWithin(DateTimeOffset? from, DateTimeOffset? to) =>
-        Points
-            .Where(p => (from is null || p.Timestamp + Resolution > from) && (to is null || p.Timestamp < to))
-            .ToList();
-
     private void Apply(TimeSeriesDefinition definition)
     {
         TimeSeriesRules.Validate(definition);

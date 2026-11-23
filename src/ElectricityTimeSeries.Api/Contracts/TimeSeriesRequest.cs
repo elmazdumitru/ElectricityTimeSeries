@@ -26,6 +26,7 @@ public sealed class TimeSeriesRequest
     public TimeSpan? Resolution { get; init; }
 
     [Required]
+    [NoNullPoints]
     public IReadOnlyList<TimeSeriesPointRequest>? Points { get; init; }
 
     /// <summary>Call only after validation has passed.</summary>
@@ -71,6 +72,26 @@ public sealed class TimeSeriesRequest
                     new($"Only a {TimeSeriesType.CrossBorderFlow} has a {context.DisplayName}."),
                 _ => ValidationResult.Success,
             };
+    }
+
+    /// <summary>Reports the first null point by its position ("points[1]"); validation skips null items otherwise.</summary>
+    private sealed class NoNullPointsAttribute : ValidationAttribute
+    {
+        protected override ValidationResult? IsValid(object? value, ValidationContext context)
+        {
+            if (value is IReadOnlyList<TimeSeriesPointRequest?> points)
+            {
+                for (var i = 0; i < points.Count; i++)
+                {
+                    if (points[i] is null)
+                    {
+                        return new ValidationResult("A point can't be null.", [$"[{i}]"]);
+                    }
+                }
+            }
+
+            return ValidationResult.Success;
+        }
     }
 }
 

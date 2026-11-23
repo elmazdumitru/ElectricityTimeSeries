@@ -5,7 +5,7 @@ namespace ElectricityTimeSeries.Api.Authorization.Enforcement;
 
 /// <summary>Asks the enforcement point about every token that passed the signature, issuer, audience and
 /// lifetime checks. A denied token is treated like an invalid one: 401.</summary>
-public sealed class PolicyEnforcingJwtBearerEvents : JwtBearerEvents
+public sealed partial class PolicyEnforcingJwtBearerEvents : JwtBearerEvents
 {
     private readonly IPolicyEnforcementPoint _enforcementPoint;
     private readonly ILogger<PolicyEnforcingJwtBearerEvents> _logger;
@@ -33,12 +33,15 @@ public sealed class PolicyEnforcingJwtBearerEvents : JwtBearerEvents
         var decision = await _enforcementPoint.EvaluateAsync(attributes, context.HttpContext.RequestAborted);
         if (!decision.IsPermitted)
         {
-            _logger.LogWarning(
-                "Refused a revoked access token (client {ClientId}, tenant {TenantId}): {Reason}",
-                attributes.ClientId, attributes.TenantId, decision.Reason);
+            LogRevokedAccessToken(_logger, attributes.ClientId, attributes.TenantId, decision.Reason!);
             context.Fail(decision.Reason!);
         }
     }
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Refused a revoked access token (client {ClientId}, tenant {TenantId}): {Reason}")]
+    private static partial void LogRevokedAccessToken(ILogger logger, string? clientId, string? tenantId, string reason);
 
     private static string? Claim(JsonWebToken token, string type) =>
         token.TryGetPayloadValue<string>(type, out var value) ? value : null;

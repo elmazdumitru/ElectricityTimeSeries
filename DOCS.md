@@ -18,7 +18,8 @@ This is everything about the API. To get it running quickly from Visual Studio, 
 ## Requirements
 
 - [.NET 11 SDK](https://dotnet.microsoft.com/download) (`global.json` requires 11.0.100 or any later 11.0 SDK)
-- [Docker](https://www.docker.com/) with Docker Compose, optional: for running the API in a container, and for running the integration tests against SQL Server
+- [Docker](https://www.docker.com/) with Docker Compose, optional: for running the API on SQL Server in containers, and for running the integration tests against SQL Server
+- An x64 (Intel or AMD) processor for anything with SQL Server: its Docker image doesn't run on ARM processors yet, so on ARM, run the API on your machine, in memory
 
 ## Running the API
 
@@ -27,10 +28,9 @@ Each way of running the API has its own port, so they can all run at the same ti
 | How it's started | Address |
 |---|---|
 | On your machine: `dotnet run`, or the `http` / `https` launch profile | `http://localhost:5021`, `https://localhost:7244` |
-| `docker compose up` | `http://localhost:5020` |
-| Visual Studio's `Container (Dockerfile)` launch profile | `http://localhost:5022` |
+| In Docker, on SQL Server: `./scripts/Start-SqlServer.ps1` | `http://localhost:5020` |
 
-The same `dotnet user-jwts` tokens work with `dotnet run` and `docker compose`.
+The same `dotnet user-jwts` tokens work on your machine and in Docker.
 
 ### On your machine
 
@@ -46,24 +46,27 @@ Then run the API from the command line:
 dotnet run --project src/ElectricityTimeSeries.Api --launch-profile https
 ```
 
-In Visual Studio, pick `https` or `http` in the launch profile dropdown next to the Run button and press F5. F5 always runs the selected profile, so with `Container (Dockerfile)` selected it runs in Docker instead.
+In Visual Studio, pick `https` or `http` in the launch profile dropdown next to the Run button and press F5.
 
 Both launch profiles run in the `Development` environment: the OpenAPI document is served, tokens from `dotnet user-jwts` are accepted (see [Getting a token](#getting-a-token-for-local-development)), and data is kept in memory, so it's gone when the API stops. To keep it, see [Using SQL Server](#using-sql-server).
 
 ### In Docker
 
-`docker-compose.yml` runs the API in a container, in the `Development` environment with in-memory storage, at `http://localhost:5020`, next to the [Aspire dashboard](#logs-traces-and-metrics):
+Docker is only used for SQL Server. `docker-compose.yml` runs the API in a container, in the `Development` environment, at `http://localhost:5020`, stored in SQL Server, next to the [Aspire dashboard](#logs-traces-and-metrics). A script starts it all and waits until the API answers:
 
 ```powershell
-docker compose up --detach --build
-docker compose down
+# -Fresh starts SQL Server empty
+./scripts/Start-SqlServer.ps1
 ```
 
-To run it on SQL Server instead, there's a script for each mode: see [Storage in Docker](#storage-in-docker).
+To stop it: `docker compose down --remove-orphans`.
 
-The container uses the same tokens as `dotnet run`: the host's user secrets folder, which holds the `dotnet user-jwts` signing key, is mounted read-only into the container. On Windows this works as is. On Linux or macOS, set `USER_SECRETS_PATH=~/.microsoft/usersecrets` first.
+- Before the API starts, a one-off `migrations` container creates or updates the tables. It runs a small program that EF Core builds from the migrations (the `migrations` stage of the `Dockerfile`).
+- The data survives restarts, until `-Fresh` deletes it.
+- SQL Server Management Studio or similar can connect from this machine to `localhost,14330`, user `sa`, password `Local-dev-1`. That password only exists in this local container.
+- A collector container reads SQL Server's own metrics (connections, requests per second, lock waits, cache) and its most expensive queries of the last minute, and passes them on to the dashboard, where they show up as `sqlserver`. Its settings are in `otel-collector.yaml`.
 
-In Visual Studio, the `Container (Dockerfile)` launch profile builds the same `Dockerfile` and runs it at `http://localhost:5022`.
+The container uses the same tokens as `dotnet run`: the host's user secrets folder, which holds the `dotnet user-jwts` signing key, is mounted read-only into the container.
 
 ### Using SQL Server
 
@@ -83,7 +86,7 @@ dotnet ef database update --project src/ElectricityTimeSeries.Infrastructure --s
 
 ### OpenAPI and health
 
-In the Development environment, the OpenAPI document is served at `/openapi/v1.json`. A health endpoint is available at `/health`. Both are anonymous; every other endpoint requires a bearer token (see below).
+In the Development environment, the OpenAPI document is served at `/openapi/v1.json`. It shows `type` as its three names. A health endpoint is available at `/health`. Both are anonymous; every other endpoint requires a bearer token (see below).
 
 ### Getting a token for local development
 
@@ -107,7 +110,7 @@ User secrets are per machine, so each developer runs the commands above once aft
 
 ### Trying the API from Visual Studio
 
-`src/ElectricityTimeSeries.Api/ElectricityTimeSeries.Api.http` has a request for every endpoint and the common errors. Its environments (`local` for the `https` launch profile, `local-http` for the `http` one, `docker` for `docker compose`) are in `http-client.env.json` and read the token from your user secrets, so nothing secret is committed. Store a token there once:
+`src/ElectricityTimeSeries.Api/ElectricityTimeSeries.Api.http` has a request for every endpoint and the common errors. Its environments (`local` for the `https` launch profile, `docker` for Docker) are in `http-client.env.json` and read the token from your user secrets, so nothing secret is committed. Store a token there once:
 
 ```powershell
 ./scripts/New-DevToken.ps1
@@ -115,42 +118,23 @@ User secrets are per machine, so each developer runs the commands above once aft
 
 Then pick the environment above the `.http` file and send requests. Tokens last about three months (or pass `-ValidFor 365d`); run the script again when requests start returning `401`. It prints when the new token expires.
 
-Here it's pointed at `docker compose`, and a new production series has just come back as `201 Created`:
+Here it's pointed at Docker, and a new production series has just come back as `201 Created`:
 
 ![The .http file in Visual Studio with the docker environment selected, and a 201 Created response for a new production series](docs/screenshots/visual-studio-http-file.png)
-
-### Storage in Docker
-
-Two scripts start everything in Docker and wait until the API answers. Either one switches over from the other:
-
-```powershell
-# In memory, like docker compose up
-./scripts/Start-InMemory.ps1
-
-# Stored in SQL Server (-Fresh starts it empty)
-./scripts/Start-SqlServer.ps1
-```
-
-To stop either one: `docker compose down --remove-orphans`.
-
-- `Start-SqlServer.ps1` adds `docker-compose.sqlserver.yml`, which adds SQL Server and switches the API to it. Before the API starts, a one-off `migrations` container creates or updates the tables. It runs a small program that EF Core builds from the migrations (the `migrations` stage of the `Dockerfile`).
-- The data survives restarts, until `-Fresh` deletes it.
-- SQL Server Management Studio or similar can connect from this machine to `localhost,14330`, user `sa`, password `Local-dev-1`. That password only exists in this local container.
-- A collector container reads SQL Server's own metrics (connections, requests per second, lock waits, cache) and its most expensive queries of the last minute, and passes them on to the dashboard, where they show up as `sqlserver`. Its settings are in `otel-collector.yaml`.
 
 ### Logs, traces and metrics
 
 The API sends its logs, traces and metrics through OpenTelemetry, but only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Locally they go to the Aspire dashboard, which runs as a container:
 
-- `docker compose up` starts the dashboard next to the API. Open `http://localhost:18888`; there's no login, since it only listens on this machine.
-- `dotnet run`, F5 and the `Container (Dockerfile)` profile send to the same dashboard. To start only the dashboard: `docker compose up dashboard --detach`.
+- `Start-SqlServer.ps1` starts the dashboard next to the API. Open `http://localhost:18888`; there's no login, since it only listens on this machine.
+- `dotnet run` and F5 send to the same dashboard. To start only the dashboard: `docker compose up dashboard --detach`.
 - If the dashboard isn't running, nothing breaks; the telemetry is just dropped.
 
 A trace shows the request, the service and repository calls inside it, and each save; on SQL Server, the SQL calls too. Here's a `PUT` with the API running on SQL Server in Docker. The popup is one of EF Core's log lines, attached to the step it came from:
 
 ![A PUT request traced in the Aspire dashboard: TimeSeriesService.Update, then TimeSeriesRepository.Get with its SELECT, and TimeSeriesRepository.Update with SaveChanges and its UPDATE on SQL Server](docs/screenshots/aspire-dashboard-trace.webp)
 
-- With [SQL Server in Docker](#storage-in-docker), SQL Server's own metrics and most expensive queries show up as well.
+- With [SQL Server in Docker](#in-docker), SQL Server's own metrics and most expensive queries show up as well.
 - Every request is traced, even when the caller asks not to (Visual Studio's HTTP client does). `/health` calls are left out.
 - In Development, metrics go out every 5 seconds (`OTEL_METRIC_EXPORT_INTERVAL`), instead of every minute.
 - The tests and CI send nothing. One integration test (`TelemetryTests`) catches the API's traces in memory, to make sure they keep being produced.
@@ -160,10 +144,10 @@ A trace shows the request, the service and repository calls inside it, and each 
 
 | Method | URL | Scope | Result |
 |---|---|---|---|
-| `GET` | `/api/time-series?biddingZone=&type=&from=&to=` | `TimeSeries.Read` | `200` with the matching series |
+| `GET` | `/api/time-series?biddingZone=&type=&from=&to=&skip=&take=` | `TimeSeries.Read` | `200` with one page of matching points, grouped by series |
 | `GET` | `/api/time-series/{id}` | `TimeSeries.Read` | `200`, or `404` |
-| `POST` | `/api/time-series` | `TimeSeries.Write` | `201` with a `Location` header |
-| `PUT` | `/api/time-series/{id}` | `TimeSeries.Write` | `200` with the replaced series, `404`, or `409` if changed at the same moment by another request |
+| `POST` | `/api/time-series` | `TimeSeries.Write` | `201` with a `Location` header, or `409` if it overlaps another series |
+| `PUT` | `/api/time-series/{id}` | `TimeSeries.Write` | `200` with the replaced series, `404`, or `409` if it overlaps another series or was changed at the same moment by another request |
 | `DELETE` | `/api/time-series/{id}` | `TimeSeries.Write` | `204`, `404`, or `409` if changed at the same moment by another request |
 
 Example body for `POST` and `PUT`:
@@ -200,22 +184,24 @@ Responses leave out empty fields, so production and consumption series have no `
 
 - `biddingZone` matches series in that zone, and flows into or out of it.
 - `from` (inclusive) and `to` (exclusive) return the series that have data in that interval, with **only the points inside it**. A point that partly overlaps the interval is included.
+- **Paging counts points, not series.** `take` (1 to 1000, default 1000) is how many points come back, and `skip` (default 0) how many to pass over. Points come in a fixed order: by series start, then series id, then time. So a series can be split across pages: each part has the series' own `start` and `end`, with only its points on that page. Fewer than `take` points means the last page.
+- The `X-Total-Count` response header says how many points match in all. It's counted again on every page, so it shows the data at the moment of that request; if the data changes between pages, a page can skip or repeat a few points.
 - All filters are optional and can be combined. Send times with a time zone (`Z` or an offset such as `%2B01:00`, where `%2B` is a URL-encoded `+`); see [Assumptions](#assumptions) for times without one.
 
 ### Validation
 
 Requests that break a rule return `400 Bad Request` with the list of invalid fields, in the Problem Details format. The rules:
 
-- Missing or `null` fields are reported by name, all at once, for example `resolution` or `points[0].value`. A wrong value type (text where a number is expected) is reported on the field itself, for example `$.points[0].timestamp`.
+- Missing or `null` fields are reported by name, all at once, for example `resolution` or `points[0].value`. A `null` point is reported by its position, for example `points[1]`. A wrong value type (text where a number is expected) is reported on the field itself, for example `$.points[0].timestamp`.
 - `type` must be one of the three names; a number such as `2` isn't accepted. An unknown `type` is reported as `$.type`.
-- Only `CrossBorderFlow` takes a `toBiddingZone`, and there it's required.
+- Times in the body must say their time zone: `Z` or an offset such as `+01:00`. `2025-11-22T10:00:00` alone is reported on the field, for example `$.points[0].timestamp`.
+- Only `CrossBorderFlow` takes a `toBiddingZone`, and there it's required. A flow's direction is its zone order: `NO2` → `DK1` and `DK1` → `NO2` are separate series.
 - The bidding zones must be known (see [Assumptions](#assumptions)). A flow needs a different receiving zone; other types can't have one.
 - The resolution must be 15 minutes or 1 hour.
-- There must be between 1 and 35,136 points (one year of 15-minute values).
+- There must be between 1 and 5,952 points (two months of 15-minute values: 62 days).
 - Each point must start on a resolution boundary (for example 10:15, not 10:07) and follow the previous one by exactly one step: no gaps, duplicates or reordering.
-- Production and consumption can't be negative. Flows can, as a negative value means the electricity flows the other way.
-- Values have at most 6 decimal places (watt-level precision for MW) and lie between ±9,999,999,999,999.999999, the range SQL Server stores exactly (`decimal(19,6)`). The same rule applies to in-memory storage, so both behave alike.
-- In a search, `from` must be earlier than `to`.
+- Values have at most 6 decimal places (watt-level precision for MW) and lie between 0 and 9,999,999,999,999.999999, the range SQL Server stores exactly (`decimal(19,6)`). The same rule applies to in-memory storage, so both behave alike.
+- In a search, `from` must be earlier than `to`, `skip` must be 0 or more, and `take` between 1 and 1000.
 
 ## Solution structure
 
@@ -232,12 +218,10 @@ ElectricityTimeSeries/
 ├── .editorconfig                              Code style
 ├── dotnet-tools.json                          Local tools: dotnet-ef, for migrations
 ├── Dockerfile                                 API container image
-├── docker-compose.yml                         API in a container, for local development
-├── docker-compose.sqlserver.yml               The same, stored in SQL Server
+├── docker-compose.yml                         API, SQL Server, migrations, the dashboard and the collector in containers, for local development
 ├── otel-collector.yaml                        Passes SQL Server's metrics to the dashboard
 ├── .github/workflows/ci.yml                   GitHub Actions pipeline
 ├── scripts/New-DevToken.ps1                   Stores a development token for the .http file
-├── scripts/Start-InMemory.ps1                 Runs the API in Docker, in memory
 ├── scripts/Start-SqlServer.ps1                Runs the API in Docker, on SQL Server
 ├── docs/architecture.svg                      The architecture diagram below
 ├── docs/screenshots/                          The screenshots in these docs
@@ -273,7 +257,7 @@ The solution follows **Clean Architecture** principles, built on the **Dependenc
 - **The domain class is also the stored class.** There are two sets of classes, not three: request/response classes in Api, and domain classes in Core. EF Core saves the domain classes directly, and how they map to storage is described in Infrastructure (`TimeSeriesConfiguration`), so Core has no storage code. The only concession is a private constructor and private setters that EF Core uses when loading data.
 - **The domain enforces its own rules.** A `TimeSeries` can only be created or changed through `Create` and `Update`, which check every business rule, so an invalid series can't exist. A broken rule throws `DomainValidationException`, which the Api turns into a `400` response.
 - **One shape per kind of time series.** `TimeSeriesDefinition` is a C# 15 union of `ProductionDefinition`, `ConsumptionDefinition` and `CrossBorderFlowDefinition`. Only a flow has a receiving zone, so a flow without one, or consumption with one, can't even be written in code. Every `switch` over the union must handle all three kinds, so adding a kind makes the compiler point at each place to update.
-- **The request is one flat class.** `TimeSeriesRequest` has every field any type can have, and once it passes validation, `ToDefinition()` turns it into the matching definition, so everything past the controller only sees the exact shapes. A small `[ReceivingZone]` check makes `toBiddingZone` required for a flow and rejects it for the other types. Request fields are nullable and marked `[Required]`, so ASP.NET Core reports every missing or `null` field by name, all at once, `type` included. They're nullable on purpose: `[Required]` only checks for `null`, so on a plain struct a missing point `value` would quietly become 0 and pass. The OpenAPI document shows the request as one shape, with `toBiddingZone` optional.
+- **The request is one flat class.** `TimeSeriesRequest` has every field any type can have, and once it passes validation, `ToDefinition()` turns it into the matching definition, so everything past the controller only sees the exact shapes. A small `[ReceivingZone]` check makes `toBiddingZone` required for a flow and rejects it for the other types. Another, `[NoNullPoints]`, reports a `null` point, which ASP.NET Core's validation would otherwise skip. Request fields are nullable and marked `[Required]`, so ASP.NET Core reports every missing or `null` field by name, all at once, `type` included. They're nullable on purpose: `[Required]` only checks for `null`, so on a plain struct a missing point `value` would quietly become 0 and pass. The OpenAPI document shows the request as one shape, with `toBiddingZone` optional.
 - **EF Core, in memory or in SQL Server.** The `Storage` configuration section picks the storage: `Provider` is `InMemory` (the default, which the assignment allows) or `SqlServer`, with a `ConnectionString`. The choice lives entirely in Infrastructure (`AddInfrastructure`); nothing else knows which one is used. SQL Server tables come from EF Core migrations (`Persistence/Migrations`). The integration tests apply them through `InitializeStorageAsync`; for a real database, use `dotnet ef database update` (see [Using SQL Server](#using-sql-server)). To add a migration: `dotnet tool restore`, then `dotnet ef migrations add <Name> --project src/ElectricityTimeSeries.Infrastructure --startup-project src/ElectricityTimeSeries.Infrastructure --output-dir Persistence/Migrations`.
 - **Simplified layering.** A full Clean Architecture template usually splits Core into separate Domain and Application projects. Given the scope of this API, they are merged into a single Core project, which keeps the solution easy to navigate while preserving the dependency rule.
 
@@ -322,7 +306,7 @@ The tests are split into two levels. By default neither needs Docker, an identit
 
 | Level | What it runs against | Tokens |
 |---|---|---|
-| **Unit** | Isolated classes: the time series rules, `BiddingZone`, `HasScope()`, `ScopeAuthorizationHandler`, the revocation rules and ledger file | none |
+| **Unit** | Isolated classes: the time series rules, `BiddingZone`, `HasScope()`, `ScopeAuthorizationHandler`, the revocation rules and ledger file, and the time zone check for body times (`ZonedTimeJsonConverter`) | none |
 | **Integration** | The whole API, run inside the test process with `WebApplicationFactory` and called through HTTP requests (no network), on in-memory storage or SQL Server | signed by the test project with its own key pair |
 
 ```powershell
@@ -360,7 +344,7 @@ With `SqlServer`, the tests start one SQL Server container themselves through [T
 
 GitHub Actions runs `.github/workflows/ci.yml` on every push to `main` and every pull request. It restores and builds in Release, runs the unit tests, runs the integration tests twice (in-memory storage, then SQL Server in Docker), and uploads the test results. Results appear on the run's summary page, built from xUnit's Markdown reports, with details of any failed test:
 
-![A GitHub Actions run summary: 63 unit tests, and 132 integration tests both in memory and on SQL Server, all passed](docs/screenshots/github-actions-summary.png)
+![A GitHub Actions run summary: the unit tests, and the integration tests both in memory and on SQL Server, all passed](docs/screenshots/github-actions-summary.png)
 
 ## Assumptions
 
@@ -368,8 +352,8 @@ GitHub Actions runs `.github/workflows/ci.yml` on every push to `main` and every
 - **Bidding zones:** the Nordic zones (`NO1`–`NO5`, `SE1`–`SE4`, `FI`, `DK1`, `DK2`) and the neighbouring zones they trade with (`EE`, `LV`, `LT`, `PL`, `DE-LU`, `NL`, `GB`). Codes are case-insensitive and stored in upper case.
 - **Units:** all values are in MW, the average power over each point's period.
 - **Resolution:** 15 minutes (the Nordic market time unit since 2025) or 1 hour (older data).
-- **Time zones:** clients may send any offset; times are stored and returned in UTC. A time sent without an offset is read as the server's local time (UTC in the Docker container), so clients should always send one.
-- **Overlaps are allowed:** several series may cover the same zone, type and time. The API doesn't decide which one is correct.
+- **Time zones:** clients may send any offset; times are stored and returned in UTC. In the body, a time without one is rejected. In a search URL it's still read as the server's local time (UTC in the Docker container), since URL values don't go through the JSON settings, so clients should always send one.
+- **No overlaps:** only one series may cover a given type, zone (or zone pair, in that order) and time. A create or update that would overlap gets `409 Conflict`, with the ids of the series in the way under `overlappingIds`. Series that only touch (one ends at 10:00, the next starts at 10:00) don't overlap.
 - **Simultaneous changes:** when two requests change or delete the same series at the same moment, one is saved and the other gets `409 Conflict` (get the series again and retry); a change is never half-applied. Each series has a hidden version stamp for this, kept in storage only. There is no `ETag` / `If-Match` yet, so a client that read a series earlier and saves later still overwrites changes made in between.
-- **No paging:** a search returns every match. Clients are expected to narrow it with filters.
+- **Paging is by position** (`skip` and `take`), not by a cursor: simple for clients, at the cost of the shifts described in [Searching](#searching) when the data changes between pages. The count and the page are two separate queries, not one transaction.
 - **With in-memory storage, data is lost on restart.**

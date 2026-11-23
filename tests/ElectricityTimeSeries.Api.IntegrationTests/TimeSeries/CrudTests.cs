@@ -83,7 +83,7 @@ public class CrudTests : TimeSeriesApiTest
     {
         var body = Series(type: "CrossBorderFlow", zone: "NO2", toZone: "DK1", points: 4);
         // The full range the rules allow: 6 decimal places, 13 digits before the point.
-        decimal[] values = [1234.567891m, -0.000001m, 0m, 9_999_999_999_999.999999m];
+        decimal[] values = [1234.567891m, 0.000001m, 0m, 9_999_999_999_999.999999m];
         for (var i = 0; i < values.Length; i++)
         {
             body["points"]![i]!["value"] = values[i];

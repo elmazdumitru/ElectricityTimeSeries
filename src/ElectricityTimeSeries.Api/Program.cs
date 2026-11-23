@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using ElectricityTimeSeries.Api.Authorization;
 using ElectricityTimeSeries.Api.ErrorHandling;
@@ -20,31 +21,24 @@ builder.Services.AddApiAuthentication();
 builder.Services
     .AddControllers(options =>
     {
-        // Report errors under the JSON field names clients send ("biddingZone"), not the C# names.
         options.ModelMetadataDetailsProviders.Add(new SystemTextJsonValidationMetadataProvider());
-
-        // Only [Required] makes something required; otherwise an unreadable body also gets
-        // a needless "The request field is required." error.
         options.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true;
     })
-    .AddJsonOptions(options =>
-    {
-        // Types are names only: "type": 2 would otherwise be read as CrossBorderFlow.
-        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
-        options.JsonSerializerOptions.Converters.Add(new BiddingZoneJsonConverter());
+    .AddJsonOptions(options => ConfigureJson(options.JsonSerializerOptions));
 
-        // Leave out nulls, so a consumption series has no "toBiddingZone": null.
-        options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
-    });
+// The OpenAPI document is built with these options, not the controllers' ones.
+builder.Services.ConfigureHttpJsonOptions(options => ConfigureJson(options.SerializerOptions));
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<DomainValidationExceptionHandler>();
 builder.Services.AddExceptionHandler<ConcurrentChangeExceptionHandler>();
+builder.Services.AddExceptionHandler<OverlappingSeriesExceptionHandler>();
 builder.Services.AddHealthChecks();
 
 builder.Services.AddOpenApi(options =>
 {
     options.AddSchemaTransformer<BiddingZoneSchemaTransformer>();
     options.AddSchemaTransformer<DurationSchemaTransformer>();
+    options.AddSchemaTransformer<ZonedTimeSchemaTransformer>();
 });
 
 var app = builder.Build();
@@ -66,6 +60,15 @@ app.MapHealthChecks("/health").AllowAnonymous();
 app.MapControllers();
 
 app.Run();
+
+static void ConfigureJson(JsonSerializerOptions options)
+{
+    options.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
+    options.Converters.Add(new BiddingZoneJsonConverter());
+    options.Converters.Add(new ZonedTimeJsonConverter());
+
+    options.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+}
 
 // Exposed for integration tests (WebApplicationFactory<Program>).
 public partial class Program;

@@ -12,7 +12,7 @@ COPY src/ src/
 RUN dotnet publish src/ElectricityTimeSeries.Api/ElectricityTimeSeries.Api.csproj \
     --configuration Release --no-restore --output /app/publish /p:UseAppHost=false
 
-# A small program that applies the EF Core migrations, used by docker-compose.sqlserver.yml.
+# A small program that applies the EF Core migrations, used by docker-compose.yml.
 FROM build AS migrations-build
 COPY dotnet-tools.json ./
 RUN dotnet tool restore && \

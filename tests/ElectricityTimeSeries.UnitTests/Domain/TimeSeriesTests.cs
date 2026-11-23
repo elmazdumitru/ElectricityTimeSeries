@@ -23,18 +23,6 @@ public class TimeSeriesTests
         Assert.All(series.Points, p => Assert.Equal(TimeSpan.Zero, p.Timestamp.Offset));
     }
 
-    [Fact]
-    public void Create_accepts_a_cross_border_flow_with_negative_values()
-    {
-        var definition = Definition(
-            TimeSeriesType.CrossBorderFlow, "NO2", toZone: "DK1",
-            points: [new TimeSeriesPoint(Midnight, -250m)]);
-
-        var series = TimeSeries.Create(definition);
-
-        Assert.Equal("DK1", series.ToBiddingZone?.ToString());
-    }
-
     public static TheoryData<string, TimeSeriesDefinition> InvalidDefinitions => new()
     {
         // A flow without a receiving zone, or consumption with one, can't be built at all, so isn't listed.
@@ -44,7 +32,8 @@ public class TimeSeriesTests
         { "resolution", Definition(resolution: TimeSpan.FromMinutes(30)) },
         { "points[0].value", Definition(TimeSeriesType.Production, points: [new TimeSeriesPoint(Midnight, -1m)]) },
         { "points[0].value", Definition(points: [new TimeSeriesPoint(Midnight, 1.0000001m)]) },
-        { "points[0].value", Definition(TimeSeriesType.CrossBorderFlow, toZone: "SE3", points: [new TimeSeriesPoint(Midnight, -10_000_000_000_000m)]) },
+        { "points[0].value", Definition(TimeSeriesType.CrossBorderFlow, toZone: "SE3", points: [new TimeSeriesPoint(Midnight, 10_000_000_000_000m)]) },
+        { "points[0].value", Definition(TimeSeriesType.CrossBorderFlow, toZone: "SE3", points: [new TimeSeriesPoint(Midnight, -1m)]) },
         { "points", Definition(points: []) },
         { "points[0].value", Definition(points: [new TimeSeriesPoint(Midnight, -1m)]) },
         { "points[0].timestamp", Definition(points: [new TimeSeriesPoint(Midnight.AddMinutes(7), 1m)]) },
@@ -115,25 +104,6 @@ public class TimeSeriesTests
 
         Assert.Equal("NO1", series.BiddingZone.ToString());
         Assert.Equal(4, series.Points.Count);
-    }
-
-    [Theory]
-    [InlineData(null, null, 4)]
-    [InlineData(0, 60, 4)]
-    [InlineData(15, 45, 2)]
-    [InlineData(20, 40, 2)] // Points that only partly overlap the interval are included.
-    [InlineData(60, 120, 0)]
-    [InlineData(null, 30, 2)]
-    [InlineData(30, null, 2)]
-    public void PointsWithin_returns_points_overlapping_the_interval(int? fromMinutes, int? toMinutes, int expectedCount)
-    {
-        var series = TimeSeries.Create(Definition());
-        DateTimeOffset? from = fromMinutes is null ? null : Midnight.AddMinutes(fromMinutes.Value);
-        DateTimeOffset? to = toMinutes is null ? null : Midnight.AddMinutes(toMinutes.Value);
-
-        var points = series.PointsWithin(from, to);
-
-        Assert.Equal(expectedCount, points.Count);
     }
 
     /// <summary>Defaults to a valid 4-point consumption series in NO1.</summary>

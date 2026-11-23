@@ -54,6 +54,7 @@ public readonly record struct BiddingZone : IParsable<BiddingZone>
                 Estonia or Latvia or Lithuania or
                 Poland or GermanyLuxembourg or Netherlands or GreatBritain;
 
+        //Have used consts intead of a HashSet<string> to avoid allocations and keep it simple. The list is small and not expected to change often.
         private const string Norway1 = "NO1";
         private const string Norway2 = "NO2";
         private const string Norway3 = "NO3";

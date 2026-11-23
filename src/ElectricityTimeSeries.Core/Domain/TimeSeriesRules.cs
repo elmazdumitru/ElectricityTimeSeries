@@ -9,8 +9,8 @@ internal static class TimeSeriesRules
         SupportedResolution15Minutes or
         SupportedResolution60Minutes;
 
-    // A leap year's worth of 15 minute intervals.
-    private const int MaxPoints = 366 * 24 * (60 / 15);
+    // Two months of 15-minute values (62 days, as in July and August).
+    private const int MaxPoints = 62 * 24 * (60 / 15);
 
     // Stops reporting point errors after this many, so a bad upload can't produce a huge response.
     private const int MaxPointErrors = 50;
@@ -18,7 +18,7 @@ internal static class TimeSeriesRules
     // Values in MW: 6 decimal places is watt-level precision, and 13 digits before the point is far
     // more than any bidding zone. Every storage keeps values this size exactly (SQL Server: decimal(19,6)).
     internal const int MaxDecimalPlaces = 6;
-    internal const decimal MaxAbsoluteValue = 9_999_999_999_999.999999m;
+    internal const decimal MaxValue = 9_999_999_999_999.999999m;
 
     public static void Validate(TimeSeriesDefinition definition)
     {
@@ -54,20 +54,12 @@ internal static class TimeSeriesRules
             errors.Add("resolution", "Supported resolutions are 15 minutes (PT15M) and 1 hour (PT1H).");
         }
 
-        // A negative flow means the electricity flows the other way; a negative production or
-        // consumption is meaningless. Listing every kind makes a new kind a compile error here.
-        var negativeValuesAllowed = definition switch
-        {
-            CrossBorderFlowDefinition => true,
-            ProductionDefinition or ConsumptionDefinition => false,
-        };
-
-        ValidatePoints(content, negativeValuesAllowed, resolutionIsValid, errors);
+        ValidatePoints(content, resolutionIsValid, errors);
 
         errors.ThrowIfAny();
     }
 
-    private static void ValidatePoints(TimeSeriesContent definition, bool negativeValuesAllowed, bool checkTimeSpans, ValidationErrors errors)
+    private static void ValidatePoints(TimeSeriesContent definition, bool checkTimeSpans, ValidationErrors errors)
     {
         var points = definition.Points;
 
@@ -89,14 +81,6 @@ internal static class TimeSeriesRules
         {
             var point = points[i];
 
-            if (!negativeValuesAllowed && point.Value < 0)
-            {
-                if (AddPointError(i, "value", "Production and consumption can't be negative."))
-                {
-                    return;
-                }
-            }
-
             if (decimal.Round(point.Value, MaxDecimalPlaces) != point.Value)
             {
                 if (AddPointError(i, "value", $"At most {MaxDecimalPlaces} decimal places are allowed."))
@@ -104,9 +88,9 @@ internal static class TimeSeriesRules
                     return;
                 }
             }
-            else if (Math.Abs(point.Value) > MaxAbsoluteValue)
+            else if (point.Value < 0 || point.Value > MaxValue)
             {
-                if (AddPointError(i, "value", $"Must be between -{MaxAbsoluteValue:N0} and {MaxAbsoluteValue:N0}."))
+                if (AddPointError(i, "value", $"Must be between 0 and {MaxValue:N0}."))
                 {
                     return;
                 }

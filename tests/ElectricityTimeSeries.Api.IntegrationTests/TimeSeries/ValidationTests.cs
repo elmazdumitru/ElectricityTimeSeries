@@ -23,6 +23,7 @@ public class ValidationTests : TimeSeriesApiTest
         { "points", Series(points: 0) },
         { "points[0].value", Series(value: -1m) },
         { "points[0].value", Series(type: "Production", value: -1m) },
+        { "points[0].value", Series(type: "CrossBorderFlow", zone: "NO1", toZone: "SE3", value: -1m) },
         { "points[0].value", Series(value: 0.0000001m) },                // 7 decimal places
         { "points[0].value", Series(value: 10_000_000_000_000m) },       // too large
         { "points[0].timestamp", Series(start: Midnight.AddMinutes(7)) },
@@ -47,7 +48,24 @@ public class ValidationTests : TimeSeriesApiTest
         { "biddingZone", WithNull(Series(), "biddingZone") },
         { "resolution", WithNull(Series(), "resolution") },
         { "points", WithNull(Series(), "points") },
+        { "points[0]", With(Series(), "points", new JsonArray((JsonNode?)null)) },
+        { "points[1]", WithNullPoint(Series(points: 3), 1) },
+        // Times must say their time zone.
+        { "$.points[0].timestamp", WithTimestamp(Series(), "2025-11-22T00:00:00") },
+        { "$.points[0].timestamp", WithTimestamp(Series(), "2025-11-22") },
     };
+
+    private static JsonObject WithTimestamp(JsonObject body, string timestamp)
+    {
+        body["points"]![0]!["timestamp"] = timestamp;
+        return body;
+    }
+
+    private static JsonObject WithNullPoint(JsonObject body, int index)
+    {
+        body["points"]![index] = null;
+        return body;
+    }
 
     [Theory]
     [MemberData(nameof(InvalidRequests))]
@@ -60,7 +78,7 @@ public class ValidationTests : TimeSeriesApiTest
     }
 
     [Fact]
-    public async Task A_year_of_15_minute_values_is_accepted_but_one_more_is_not()
+    public async Task Two_months_of_15_minute_values_are_accepted_but_one_more_is_not()
     {
         var accepted = await Post(Series(points: MaxPoints));
         var rejected = await Post(Series(start: Midnight.AddYears(2), points: MaxPoints + 1));

@@ -13,7 +13,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $root = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($PSScriptRoot, '..'))
-$compose = @('compose', '-f', "$root/docker-compose.yml", '-f', "$root/docker-compose.sqlserver.yml")
+$compose = @('compose', '-f', "$root/docker-compose.yml")
 
 if ($Fresh) {
     & docker @compose down --volumes --remove-orphans

@@ -166,10 +166,50 @@ public class SearchTests : TimeSeriesApiTest
     [InlineData("from=2025-11-22T02:00:00Z&to=2025-11-22T01:00:00Z", "from")]
     [InlineData("from=2025-11-22T01:00:00Z&to=2025-11-22T01:00:00Z", "from")]
     [InlineData("from=not-a-date", "from")]
+    [InlineData("skip=-1", "skip")]
+    [InlineData("take=0", "take")]
+    [InlineData("take=1001", "take")]
+    [InlineData("take=lots", "take")]
     public async Task Invalid_search_returns_400_validation_problem(string query, string expectedField)
     {
         var response = await Client.GetAsync($"{BaseUrl}?{query}", Ct);
 
         await AssertValidationProblem(response, expectedField);
+    }
+
+    [Fact]
+    public async Task A_series_thousands_of_years_away_doesnt_break_a_search()
+    {
+        var farAway = await Create(Series(start: new DateTimeOffset(9000, 1, 1, 0, 0, 0, TimeSpan.Zero), points: 1));
+        var nearby = await Create(Series(zone: "SE1", resolution: "PT1H", start: Midnight, points: 2, step: TimeSpan.FromHours(1)));
+
+        var results = await Search($"from={Query(new DateTimeOffset(1900, 1, 1, 0, 0, 0, TimeSpan.Zero))}");
+
+        Assert.Equal([nearby.Id, farAway.Id], results.Select(s => s.Id));
+    }
+
+    // Points cover 00:00-00:15, 00:15-00:30, 00:30-00:45 and 00:45-01:00; times are seconds after midnight.
+    [Theory]
+    [InlineData(null, null, 4)]
+    [InlineData(0, 3600, 4)]
+    [InlineData(900, 2700, 2)]
+    [InlineData(899, 2700, 3)]   // a second before 00:15 still falls in the first point
+    [InlineData(900, 2701, 3)]   // a second after 00:45 already falls in the last point
+    [InlineData(3600, 7200, 0)]
+    [InlineData(null, 1800, 2)]
+    [InlineData(1800, null, 2)]
+    public async Task A_point_matches_when_its_period_overlaps_the_interval(int? fromSeconds, int? toSeconds, int expected)
+    {
+        await Create(Series(start: Midnight, points: 4));
+        var query = string.Join('&', new[]
+        {
+            fromSeconds is { } from ? $"from={Query(Midnight.AddSeconds(from))}" : null,
+            toSeconds is { } to ? $"to={Query(Midnight.AddSeconds(to))}" : null,
+        }.OfType<string>());
+
+        var (results, total) = await SearchPage(query);
+
+        Assert.Equal(expected, results.Sum(s => s.Points.Length));
+        Assert.Equal(expected, total);
     }
 }

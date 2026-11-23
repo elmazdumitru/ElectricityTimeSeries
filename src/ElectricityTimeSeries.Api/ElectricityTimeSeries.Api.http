@@ -1,4 +1,4 @@
-# Pick the environment matching your launch profile (local = https, local-http, docker); a mismatch gives 401.
+# Pick the environment matching how you run the API (local = https profile, docker = Docker); a mismatch gives 401.
 # Store a token once with ./scripts/New-DevToken.ps1, and again when requests start returning 401.
 
 ### Health check (no token needed)
@@ -44,7 +44,7 @@ Content-Type: application/json
   ]
 }
 
-### Cross-border flow from NO2 to DK1 (a negative value means the flow goes the other way)
+### Cross-border flow from NO2 to DK1
 POST {{host}}/api/time-series
 Authorization: Bearer {{token}}
 Content-Type: application/json
@@ -56,7 +56,7 @@ Content-Type: application/json
   "resolution": "PT15M",
   "points": [
     { "timestamp": "2025-11-22T00:00:00Z", "value": 1250.5 },
-    { "timestamp": "2025-11-22T00:15:00Z", "value": -90 }
+    { "timestamp": "2025-11-22T00:15:00Z", "value": 90 }
   ]
 }
 
@@ -81,6 +81,10 @@ Authorization: Bearer {{token}}
 
 ### Search: the same interval in Oslo time (+01:00, with "+" written as %2B)
 GET {{host}}/api/time-series?biddingZone=NO1&from=2025-11-22T01:15:00%2B01:00&to=2025-11-22T01:45:00%2B01:00
+Authorization: Bearer {{token}}
+
+### Search, a page at a time: skip and take count points (X-Total-Count has the total)
+GET {{host}}/api/time-series?skip=2&take=3
 Authorization: Bearer {{token}}
 
 
@@ -145,7 +149,7 @@ Content-Type: application/json
   "points": [{ "timestamp": "2025-11-22T00:00:00Z", "value": 1 }]
 }
 
-### 400: business rules (unknown zone, gap between points, negative consumption)
+### 400: business rules (unknown zone, gap between points, value below 0)
 POST {{host}}/api/time-series
 Authorization: Bearer {{token}}
 Content-Type: application/json
@@ -160,6 +164,6 @@ Content-Type: application/json
   ]
 }
 
-### 400: "from" must be earlier than "to"
-GET {{host}}/api/time-series?from=2025-11-22T02:00:00Z&to=2025-11-22T01:00:00Z
+### 400: "from" must be earlier than "to", and "take" is at most 1000
+GET {{host}}/api/time-series?from=2025-11-22T02:00:00Z&to=2025-11-22T01:00:00Z&take=5000
 Authorization: Bearer {{token}}

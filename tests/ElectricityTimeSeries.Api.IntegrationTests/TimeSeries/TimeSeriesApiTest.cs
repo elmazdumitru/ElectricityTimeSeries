@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -13,8 +14,8 @@ public abstract class TimeSeriesApiTest : IsolatedApiTest
 {
     protected const string BaseUrl = "api/time-series";
 
-    /// <summary>The largest series allowed: a leap year of 15-minute values.</summary>
-    protected const int MaxPoints = 366 * 24 * 4;
+    /// <summary>The largest series allowed: two months (62 days) of 15-minute values.</summary>
+    protected const int MaxPoints = 62 * 24 * 4;
 
     protected static readonly DateTimeOffset Midnight = new(2025, 11, 22, 0, 0, 0, TimeSpan.Zero);
 
@@ -61,11 +62,16 @@ public abstract class TimeSeriesApiTest : IsolatedApiTest
         return await ReadSeries(response);
     }
 
-    protected async Task<SeriesResult[]> Search(string query = "")
+    protected async Task<SeriesResult[]> Search(string query = "") => (await SearchPage(query)).Results;
+
+    /// <summary>One page of a search, with the X-Total-Count header: how many points match in all.</summary>
+    protected async Task<(SeriesResult[] Results, int Total)> SearchPage(string query = "")
     {
         var response = await Client.GetAsync($"{BaseUrl}?{query}", Ct);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        return (await response.Content.ReadFromJsonAsync<SeriesResult[]>(Json, Ct))!;
+
+        var total = int.Parse(Assert.Single(response.Headers.GetValues("X-Total-Count")), CultureInfo.InvariantCulture);
+        return ((await response.Content.ReadFromJsonAsync<SeriesResult[]>(Json, Ct))!, total);
     }
 
     protected static async Task<SeriesResult> ReadSeries(HttpResponseMessage response) =>
