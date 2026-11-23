@@ -32,7 +32,6 @@ builder.Services
         // Types are names only: "type": 2 would otherwise be read as CrossBorderFlow.
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
         options.JsonSerializerOptions.Converters.Add(new BiddingZoneJsonConverter());
-        options.JsonSerializerOptions.Converters.Add(new IsoDurationJsonConverter());
 
         // Leave out nulls, so a consumption series has no "toBiddingZone": null.
         options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
