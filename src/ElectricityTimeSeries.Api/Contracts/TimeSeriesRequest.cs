@@ -1,19 +1,22 @@
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
-using System.Text.Json.Serialization;
 using ElectricityTimeSeries.Core.Domain;
 
 namespace ElectricityTimeSeries.Api.Contracts;
 
 // Fields are nullable so [Required] can report a missing one by name, instead of it silently becoming 0.
-[JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
-[JsonDerivedType(typeof(ProductionRequest), nameof(TimeSeriesType.Production))]
-[JsonDerivedType(typeof(ConsumptionRequest), nameof(TimeSeriesType.Consumption))]
-[JsonDerivedType(typeof(CrossBorderFlowRequest), nameof(TimeSeriesType.CrossBorderFlow))]
-public closed class TimeSeriesRequest
+public sealed class TimeSeriesRequest
 {
     [Required]
+    public TimeSeriesType? Type { get; init; }
+
+    /// <summary>For a flow, the zone the electricity leaves.</summary>
+    [Required]
     public BiddingZone? BiddingZone { get; init; }
+
+    /// <summary>For a cross-border flow only: the zone the electricity goes to.</summary>
+    [ReceivingZone]
+    public BiddingZone? ToBiddingZone { get; init; }
 
     /// <summary>How long each point lasts, as an ISO 8601 duration: PT15M or PT1H.</summary>
     [Required]
@@ -23,49 +26,48 @@ public closed class TimeSeriesRequest
     public IReadOnlyList<TimeSeriesPointRequest>? Points { get; init; }
 
     /// <summary>Call only after validation has passed.</summary>
-    public TimeSeriesDefinition ToDefinition() => this switch
+    public TimeSeriesDefinition ToDefinition()
     {
-        ProductionRequest (var zone, var resolution, var points) =>
-            new ProductionDefinition { BiddingZone = zone, Resolution = resolution, Points = points },
-        ConsumptionRequest (var zone, var resolution, var points) =>
-            new ConsumptionDefinition { BiddingZone = zone, Resolution = resolution, Points = points },
-        CrossBorderFlowRequest (var zone, var toZone, var resolution, var points) =>
-            new CrossBorderFlowDefinition { BiddingZone = zone, ToBiddingZone = toZone, Resolution = resolution, Points = points },
-    };
-
-    internal void Deconstruct(out BiddingZone biddingZone, out TimeSpan resolution, out IReadOnlyList<TimeSeriesPoint> points)
-    {
-        biddingZone = BiddingZone ?? throw NotValidated(nameof(BiddingZone));
-        resolution = Resolution ?? throw NotValidated(nameof(Resolution));
-        points = (Points ?? throw NotValidated(nameof(Points)))
+        var zone = BiddingZone ?? throw NotValidated(nameof(BiddingZone));
+        var resolution = Resolution ?? throw NotValidated(nameof(Resolution));
+        var points = (Points ?? throw NotValidated(nameof(Points)))
             .Select(p => new TimeSeriesPoint(
                 p.Timestamp ?? throw NotValidated(nameof(p.Timestamp)),
                 p.Value ?? throw NotValidated(nameof(p.Value))))
             .ToList();
+
+        return Type switch
+        {
+            TimeSeriesType.Production =>
+                new ProductionDefinition { BiddingZone = zone, Resolution = resolution, Points = points },
+            TimeSeriesType.Consumption =>
+                new ConsumptionDefinition { BiddingZone = zone, Resolution = resolution, Points = points },
+            TimeSeriesType.CrossBorderFlow => new CrossBorderFlowDefinition
+            {
+                BiddingZone = zone,
+                ToBiddingZone = ToBiddingZone ?? throw NotValidated(nameof(ToBiddingZone)),
+                Resolution = resolution,
+                Points = points,
+            },
+            _ => throw NotValidated(nameof(Type)),
+        };
     }
 
-    private protected static UnreachableException NotValidated(string field) =>
+    private static UnreachableException NotValidated(string field) =>
         new($"'{field}' is missing; the request should have been rejected by validation.");
-}
 
-/// <summary>A receiving zone is rejected as an unknown field.</summary>
-[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-public sealed class ProductionRequest : TimeSeriesRequest;
-
-/// <summary>A receiving zone is rejected as an unknown field.</summary>
-[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-public sealed class ConsumptionRequest : TimeSeriesRequest;
-
-/// <summary>A flow from <see cref="TimeSeriesRequest.BiddingZone"/> to <see cref="ToBiddingZone"/>.</summary>
-public sealed class CrossBorderFlowRequest : TimeSeriesRequest
-{
-    [Required]
-    public BiddingZone? ToBiddingZone { get; init; }
-
-    internal void Deconstruct(out BiddingZone biddingZone, out BiddingZone toBiddingZone, out TimeSpan resolution, out IReadOnlyList<TimeSeriesPoint> points)
+    /// <summary>A flow needs a receiving zone, and the other types can't have one.</summary>
+    private sealed class ReceivingZoneAttribute : ValidationAttribute
     {
-        Deconstruct(out biddingZone, out resolution, out points);
-        toBiddingZone = ToBiddingZone ?? throw NotValidated(nameof(ToBiddingZone));
+        protected override ValidationResult? IsValid(object? value, ValidationContext context) =>
+            (((TimeSeriesRequest)context.ObjectInstance).Type, value) switch
+            {
+                (TimeSeriesType.CrossBorderFlow, null) =>
+                    new($"The {context.DisplayName} field is required for a {TimeSeriesType.CrossBorderFlow}."),
+                (TimeSeriesType.Production or TimeSeriesType.Consumption, not null) =>
+                    new($"Only a {TimeSeriesType.CrossBorderFlow} has a {context.DisplayName}."),
+                _ => ValidationResult.Success,
+            };
     }
 }
 

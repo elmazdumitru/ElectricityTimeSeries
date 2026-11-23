@@ -30,15 +30,16 @@ public class ValidationTests : TimeSeriesApiTest
         { "points[1].timestamp", Series(points: 2, step: TimeSpan.FromMinutes(30)) },   // gap
         { "points[1].timestamp", Series(points: 2, step: TimeSpan.Zero) },              // duplicate
         { "points[1].timestamp", Series(points: 2, step: TimeSpan.FromMinutes(-15)) },  // out of order
-        // Only flows have a receiving zone; for the other kinds it's an unknown JSON field.
-        { "$.toBiddingZone", Series(type: "Consumption", zone: "NO1", toZone: "SE3") },
-        { "$.toBiddingZone", Series(type: "Production", zone: "NO1", toZone: "SE3") },
-        // The type picks the kind before anything else is read, so its errors are on the whole object.
-        { "$", With(Series(), "type", 42) },
-        { "$", With(Series(), "type", "42") },
-        { "$", With(Series(), "type", "Nuclear") },
-        { "$", Without(Series(), "type") },
+        // Only flows have a receiving zone.
+        { "toBiddingZone", Series(type: "Consumption", zone: "NO1", toZone: "SE3") },
+        { "toBiddingZone", Series(type: "Production", zone: "NO1", toZone: "SE3") },
+        // Types are names only.
+        { "$.type", With(Series(), "type", 42) },
+        { "$.type", With(Series(), "type", "42") },
+        { "$.type", With(Series(), "type", "Nuclear") },
         // Missing or null fields are reported by name.
+        { "type", Without(Series(), "type") },
+        { "type", WithNull(Series(), "type") },
         { "biddingZone", Without(Series(), "biddingZone") },
         { "resolution", Without(Series(), "resolution") },
         { "points", Without(Series(), "points") },
@@ -86,15 +87,19 @@ public class ValidationTests : TimeSeriesApiTest
         Assert.Equal(["biddingZone", "points", "resolution", "toBiddingZone"], fields.Order());
     }
 
+    [Fact]
+    public async Task An_empty_object_reports_every_missing_field()
+    {
+        var fields = await ErrorFields(await Post(new JsonObject()));
+
+        Assert.Equal(["biddingZone", "points", "resolution", "type"], fields.Order());
+    }
+
     [Theory]
-    [InlineData("""{ "biddingZone": "NO1" }""", "$")]
-    [InlineData("""{ "type": "Nuclear" }""", "$")]
-    [InlineData("""{ "type": "consumption" }""", "$")] // type values are case-sensitive
+    [InlineData("""{ "type": "Nuclear" }""", "$.type")]
     [InlineData("""{ "type": "Consumption", "biddingZone": 1 }""", "$.biddingZone")]
     [InlineData("""{ "type": "Consumption", "resolution": "15 minutes" }""", "$.resolution")]
     [InlineData("""{ "type": "Consumption", "points": [{ "timestamp": "yesterday", "value": 1 }] }""", "$.points[0].timestamp")]
-    [InlineData("""{ "resolution": "PT15M", "type": "Consumption", "biddingZone": 1 }""", "$.biddingZone")] // type anywhere
-    [InlineData("""{ "points": [{ "timestamp": "2025-11-22T00:00:00Z", "value": 1 }], "type": "Consumption", "biddingZone": 1 }""", "$.biddingZone")]
     [InlineData("""{ "type": "Consumption", "biddingZone": "NO1", "resolution": "PT15M", "points": [{ "timestamp": "2025-11-22T00:00:00Z" }] }""", "points[0].value")]
     [InlineData("", "")]
     [InlineData("{ not json", "$")]

@@ -29,17 +29,14 @@ builder.Services
     })
     .AddJsonOptions(options =>
     {
-        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        // Types are names only: "type": 2 would otherwise be read as CrossBorderFlow.
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
         options.JsonSerializerOptions.Converters.Add(new BiddingZoneJsonConverter());
         options.JsonSerializerOptions.Converters.Add(new IsoDurationJsonConverter());
 
         // Leave out nulls, so a consumption series has no "toBiddingZone": null.
         options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
-
-        // Let the "type" field that picks the kind of request appear anywhere in the object, not only first.
-        options.JsonSerializerOptions.AllowOutOfOrderMetadataProperties = true;
     });
-builder.Services.ConfigureOptions<MissingTypeJsonInputFormatterSetup>();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<DomainValidationExceptionHandler>();
 builder.Services.AddExceptionHandler<ConcurrentChangeExceptionHandler>();
