@@ -18,8 +18,7 @@ services:
       - "5020:8080"
     volumes:
       # The dotnet user-jwts signing key lives in the host's user secrets.
-      # On Linux/macOS, set USER_SECRETS_PATH=~/.microsoft/usersecrets first.
-      - ${USER_SECRETS_PATH:-${APPDATA}/Microsoft/UserSecrets}:/home/app/.microsoft/usersecrets:ro
+      - ${APPDATA}/Microsoft/UserSecrets:/home/app/.microsoft/usersecrets:ro
 
   dashboard:
     image: mcr.microsoft.com/dotnet/aspire-dashboard:13.6

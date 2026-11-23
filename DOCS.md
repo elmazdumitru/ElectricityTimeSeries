@@ -61,7 +61,7 @@ docker compose down
 
 To run it on SQL Server instead, there's a script for each mode: see [Storage in Docker](#storage-in-docker).
 
-The container uses the same tokens as `dotnet run`: the host's user secrets folder, which holds the `dotnet user-jwts` signing key, is mounted read-only into the container. On Windows this works as is. On Linux or macOS, set `USER_SECRETS_PATH=~/.microsoft/usersecrets` first.
+The container uses the same tokens as `dotnet run`: the host's user secrets folder, which holds the `dotnet user-jwts` signing key, is mounted read-only into the container.
 
 In Visual Studio, the `Container (Dockerfile)` launch profile builds the same `Dockerfile` and runs it at `http://localhost:5022`.
 
