@@ -21,7 +21,7 @@ public class ConcurrencyTests : TimeSeriesApiTest
     {
         for (var round = 0; round < Rounds; round++)
         {
-            var created = await Create(Series(points: 4));
+            var created = await Create(Series(start: Day(round, 50), points: 4));
 
             var responses = await Task.WhenAll(Enumerable.Range(0, Parallel).Select(_ => Delete(created.Id)));
 
@@ -37,9 +37,9 @@ public class ConcurrencyTests : TimeSeriesApiTest
     {
         for (var round = 0; round < Rounds; round++)
         {
-            var created = await Create(Series(points: 4));
+            var created = await Create(Series(start: Day(round, 50), points: 4));
 
-            var updates = Enumerable.Range(0, Parallel).Select(i => Put(created.Id, Version(i))).ToList();
+            var updates = Enumerable.Range(0, Parallel).Select(i => Put(created.Id, Version(i, round))).ToList();
             var delete = Delete(created.Id);
             var responses = await Task.WhenAll([.. updates, delete]);
 
@@ -65,8 +65,8 @@ public class ConcurrencyTests : TimeSeriesApiTest
     {
         for (var round = 0; round < Rounds; round++)
         {
-            var created = await Create(Series(points: 4));
-            var versions = Enumerable.Range(0, Parallel).Select(Version).ToArray();
+            var created = await Create(Series(start: Day(round, 50), points: 4));
+            var versions = Enumerable.Range(0, Parallel).Select(i => Version(i, round)).ToArray();
 
             var responses = await Task.WhenAll(versions.Select(v => Put(created.Id, v)));
 
@@ -107,8 +107,8 @@ public class ConcurrencyTests : TimeSeriesApiTest
         // Run updates until one is turned away, so its response can be checked.
         for (var round = 0; round < Rounds * 4; round++)
         {
-            var created = await Create(Series(points: 4));
-            var responses = await Task.WhenAll(Enumerable.Range(0, Parallel).Select(i => Put(created.Id, Version(i))));
+            var created = await Create(Series(start: Day(round, 50), points: 4));
+            var responses = await Task.WhenAll(Enumerable.Range(0, Parallel).Select(i => Put(created.Id, Version(i, round))));
             var conflict = responses.FirstOrDefault(r => r.StatusCode == HttpStatusCode.Conflict);
 
             if (conflict is not null)
@@ -123,10 +123,13 @@ public class ConcurrencyTests : TimeSeriesApiTest
         Assert.Skip("No update was turned away in these rounds, so there was no conflict response to check.");
     }
 
+    // Each round and version gets its own day, so no two series overlap.
+    private static DateTimeOffset Day(int round, int i) => Midnight.AddDays(100 * round + i);
+
     /// <summary>A distinct, valid series body for each <paramref name="i"/>.</summary>
-    private static JsonObject Version(int i)
+    private static JsonObject Version(int i, int round = 0)
     {
         string[] zones = ["NO1", "NO2", "NO3", "NO4", "NO5", "SE1", "SE2", "SE3", "SE4", "FI"];
-        return Series(zone: zones[i % zones.Length], points: i + 1, value: 100m * i);
+        return Series(zone: zones[i % zones.Length], start: Day(round, i), points: i + 1, value: 100m * i);
     }
 }

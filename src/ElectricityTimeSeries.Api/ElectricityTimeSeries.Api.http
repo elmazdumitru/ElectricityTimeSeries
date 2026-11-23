@@ -44,7 +44,7 @@ Content-Type: application/json
   ]
 }
 
-### Cross-border flow from NO2 to DK1 (a negative value means the flow goes the other way)
+### Cross-border flow from NO2 to DK1
 POST {{host}}/api/time-series
 Authorization: Bearer {{token}}
 Content-Type: application/json
@@ -56,7 +56,7 @@ Content-Type: application/json
   "resolution": "PT15M",
   "points": [
     { "timestamp": "2025-11-22T00:00:00Z", "value": 1250.5 },
-    { "timestamp": "2025-11-22T00:15:00Z", "value": -90 }
+    { "timestamp": "2025-11-22T00:15:00Z", "value": 90 }
   ]
 }
 
@@ -145,7 +145,7 @@ Content-Type: application/json
   "points": [{ "timestamp": "2025-11-22T00:00:00Z", "value": 1 }]
 }
 
-### 400: business rules (unknown zone, gap between points, negative consumption)
+### 400: business rules (unknown zone, gap between points, value below 0)
 POST {{host}}/api/time-series
 Authorization: Bearer {{token}}
 Content-Type: application/json

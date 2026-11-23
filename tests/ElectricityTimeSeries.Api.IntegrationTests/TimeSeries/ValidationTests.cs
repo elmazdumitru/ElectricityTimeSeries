@@ -23,6 +23,7 @@ public class ValidationTests : TimeSeriesApiTest
         { "points", Series(points: 0) },
         { "points[0].value", Series(value: -1m) },
         { "points[0].value", Series(type: "Production", value: -1m) },
+        { "points[0].value", Series(type: "CrossBorderFlow", zone: "NO1", toZone: "SE3", value: -1m) },
         { "points[0].value", Series(value: 0.0000001m) },                // 7 decimal places
         { "points[0].value", Series(value: 10_000_000_000_000m) },       // too large
         { "points[0].timestamp", Series(start: Midnight.AddMinutes(7)) },
@@ -60,7 +61,7 @@ public class ValidationTests : TimeSeriesApiTest
     }
 
     [Fact]
-    public async Task A_year_of_15_minute_values_is_accepted_but_one_more_is_not()
+    public async Task Two_months_of_15_minute_values_are_accepted_but_one_more_is_not()
     {
         var accepted = await Post(Series(points: MaxPoints));
         var rejected = await Post(Series(start: Midnight.AddYears(2), points: MaxPoints + 1));

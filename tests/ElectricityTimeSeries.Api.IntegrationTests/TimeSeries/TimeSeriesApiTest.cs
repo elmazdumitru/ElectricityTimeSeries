@@ -13,8 +13,8 @@ public abstract class TimeSeriesApiTest : IsolatedApiTest
 {
     protected const string BaseUrl = "api/time-series";
 
-    /// <summary>The largest series allowed: a leap year of 15-minute values.</summary>
-    protected const int MaxPoints = 366 * 24 * 4;
+    /// <summary>The largest series allowed: two months (62 days) of 15-minute values.</summary>
+    protected const int MaxPoints = 62 * 24 * 4;
 
     protected static readonly DateTimeOffset Midnight = new(2025, 11, 22, 0, 0, 0, TimeSpan.Zero);
 

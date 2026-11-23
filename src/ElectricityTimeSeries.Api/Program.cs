@@ -31,6 +31,7 @@ builder.Services.ConfigureHttpJsonOptions(options => ConfigureJson(options.Seria
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<DomainValidationExceptionHandler>();
 builder.Services.AddExceptionHandler<ConcurrentChangeExceptionHandler>();
+builder.Services.AddExceptionHandler<OverlappingSeriesExceptionHandler>();
 builder.Services.AddHealthChecks();
 
 builder.Services.AddOpenApi(options =>

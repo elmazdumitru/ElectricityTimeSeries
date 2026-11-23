@@ -208,13 +208,12 @@ Requests that break a rule return `400 Bad Request` with the list of invalid fie
 
 - Missing or `null` fields are reported by name, all at once, for example `resolution` or `points[0].value`. A wrong value type (text where a number is expected) is reported on the field itself, for example `$.points[0].timestamp`.
 - `type` must be one of the three names; a number such as `2` isn't accepted. An unknown `type` is reported as `$.type`.
-- Only `CrossBorderFlow` takes a `toBiddingZone`, and there it's required.
+- Only `CrossBorderFlow` takes a `toBiddingZone`, and there it's required. A flow's direction is its zone order: `NO2` → `DK1` and `DK1` → `NO2` are separate series.
 - The bidding zones must be known (see [Assumptions](#assumptions)). A flow needs a different receiving zone; other types can't have one.
 - The resolution must be 15 minutes or 1 hour.
-- There must be between 1 and 35,136 points (one year of 15-minute values).
+- There must be between 1 and 5,952 points (two months of 15-minute values: 62 days).
 - Each point must start on a resolution boundary (for example 10:15, not 10:07) and follow the previous one by exactly one step: no gaps, duplicates or reordering.
-- Production and consumption can't be negative. Flows can, as a negative value means the electricity flows the other way.
-- Values have at most 6 decimal places (watt-level precision for MW) and lie between ±9,999,999,999,999.999999, the range SQL Server stores exactly (`decimal(19,6)`). The same rule applies to in-memory storage, so both behave alike.
+- Values have at most 6 decimal places (watt-level precision for MW) and lie between 0 and 9,999,999,999,999.999999, the range SQL Server stores exactly (`decimal(19,6)`). The same rule applies to in-memory storage, so both behave alike.
 - In a search, `from` must be earlier than `to`.
 
 ## Solution structure
@@ -369,7 +368,7 @@ GitHub Actions runs `.github/workflows/ci.yml` on every push to `main` and every
 - **Units:** all values are in MW, the average power over each point's period.
 - **Resolution:** 15 minutes (the Nordic market time unit since 2025) or 1 hour (older data).
 - **Time zones:** clients may send any offset; times are stored and returned in UTC. A time sent without an offset is read as the server's local time (UTC in the Docker container), so clients should always send one.
-- **Overlaps are allowed:** several series may cover the same zone, type and time. The API doesn't decide which one is correct.
+- **No overlaps:** only one series may cover a given type, zone (or zone pair, in that order) and time. A create or update that would overlap gets `409 Conflict`, with the ids of the series in the way under `overlappingIds`. Series that only touch (one ends at 10:00, the next starts at 10:00) don't overlap.
 - **Simultaneous changes:** when two requests change or delete the same series at the same moment, one is saved and the other gets `409 Conflict` (get the series again and retry); a change is never half-applied. Each series has a hidden version stamp for this, kept in storage only. There is no `ETag` / `If-Match` yet, so a client that read a series earlier and saves later still overwrites changes made in between.
 - **No paging:** a search returns every match. Clients are expected to narrow it with filters.
 - **With in-memory storage, data is lost on restart.**

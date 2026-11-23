@@ -45,6 +45,7 @@ public sealed class TimeSeriesController : ControllerBase
     [Authorize(Policy = Policies.CanWriteTimeSeries)]
     [Consumes("application/json")]
     [ProducesResponseType<TimeSeriesResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<TimeSeriesResponse>> Create(TimeSeriesRequest request, CancellationToken cancellationToken)
     {

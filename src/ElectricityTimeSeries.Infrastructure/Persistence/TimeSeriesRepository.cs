@@ -62,7 +62,14 @@ internal sealed class TimeSeriesRepository : ITimeSeriesRepository
         using var activity = StartActivity("TimeSeriesRepository.Add", series.Id);
         _context.TimeSeries.Add(series);
         StampNewVersion(series);
-        await SaveChangesAsync(cancellationToken);
+        await SaveWithoutOverlapsAsync(
+            series,
+            async () =>
+            {
+                await SaveChangesAsync(cancellationToken);
+                return true;
+            },
+            cancellationToken);
     }
 
     public async Task<bool> UpdateAsync(TimeSeries series, CancellationToken cancellationToken)
@@ -74,7 +81,7 @@ internal sealed class TimeSeriesRepository : ITimeSeriesRepository
         }
 
         StampNewVersion(series);
-        return await SaveRacingChangesAsync(series, cancellationToken);
+        return await SaveWithoutOverlapsAsync(series, () => SaveLoadedAsync(series, cancellationToken), cancellationToken);
     }
 
     public async Task<bool> DeleteAsync(TimeSeries series, CancellationToken cancellationToken)
@@ -83,7 +90,7 @@ internal sealed class TimeSeriesRepository : ITimeSeriesRepository
         if (_context.Database.IsInMemory())
         {
             _context.TimeSeries.Remove(series);
-            return await SaveRacingChangesAsync(series, cancellationToken);
+            return await _racingSaves.RunAsync(() => SaveLoadedAsync(series, cancellationToken), cancellationToken);
         }
 
         // One statement: the database deletes the points (ON DELETE CASCADE), not EF one by one.
@@ -106,38 +113,86 @@ internal sealed class TimeSeriesRepository : ITimeSeriesRepository
     private Guid LoadedVersion(TimeSeries series) =>
         (Guid)_context.Entry(series).Property(TimeSeriesConfiguration.VersionProperty).OriginalValue!;
 
-    private Task<bool> SaveRacingChangesAsync(TimeSeries series, CancellationToken cancellationToken) =>
-        _racingSaves.RunAsync(
-            async () =>
+    /// <summary>Saves a series loaded with GetAsync. Callers run it in the racing-save guard or a transaction.</summary>
+    private async Task<bool> SaveLoadedAsync(TimeSeries series, CancellationToken cancellationToken)
+    {
+        if (_racingSaves.ChecksVersionFirst)
+        {
+            var loadedVersion = LoadedVersion(series);
+            var storedVersion = await ReadStoredVersionAsync(series.Id, cancellationToken);
+
+            if (storedVersion is null)
             {
-                if (_racingSaves.ChecksVersionFirst)
-                {
-                    var loadedVersion = LoadedVersion(series);
-                    var storedVersion = await ReadStoredVersionAsync(series.Id, cancellationToken);
+                return false;
+            }
 
-                    if (storedVersion is null)
-                    {
-                        return false;
-                    }
+            if (storedVersion != loadedVersion)
+            {
+                throw new ConcurrentChangeException(series.Id);
+            }
+        }
 
-                    if (storedVersion != loadedVersion)
-                    {
-                        throw new ConcurrentChangeException(series.Id);
-                    }
-                }
+        try
+        {
+            await SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateException exception) when (IsRace(exception))
+        {
+            var stillExists = await _context.TimeSeries.AsNoTracking().AnyAsync(s => s.Id == series.Id, cancellationToken);
+            return stillExists ? throw new ConcurrentChangeException(series.Id, exception) : false;
+        }
+    }
 
-                try
+    /// <summary>Checks for overlaps and saves as one step, so two overlapping saves can't both get through.</summary>
+    private async Task<bool> SaveWithoutOverlapsAsync(TimeSeries series, Func<Task<bool>> save, CancellationToken cancellationToken)
+    {
+        if (_context.Database.IsInMemory())
+        {
+            return await _racingSaves.RunAsync(
+                async () =>
                 {
-                    await SaveChangesAsync(cancellationToken);
-                    return true;
-                }
-                catch (DbUpdateException exception) when (IsRace(exception))
-                {
-                    var stillExists = await _context.TimeSeries.AsNoTracking().AnyAsync(s => s.Id == series.Id, cancellationToken);
-                    return stillExists ? throw new ConcurrentChangeException(series.Id, exception) : false;
-                }
-            },
-            cancellationToken);
+                    await ThrowIfOverlapsAsync(series, cancellationToken);
+                    return await save();
+                },
+                cancellationToken);
+        }
+
+        return await _context.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+            // One writer at a time per type and zones, until the transaction ends.
+            var lockName = $"time-series:{series.Type}:{series.BiddingZone}:{series.ToBiddingZone}";
+            await _context.Database.ExecuteSqlAsync(
+                $"EXEC sp_getapplock @Resource = {lockName}, @LockMode = 'Exclusive', @LockOwner = 'Transaction'",
+                cancellationToken);
+
+            await ThrowIfOverlapsAsync(series, cancellationToken);
+            var saved = await save();
+            await transaction.CommitAsync(cancellationToken);
+            return saved;
+        });
+    }
+
+    private async Task ThrowIfOverlapsAsync(TimeSeries series, CancellationToken cancellationToken)
+    {
+        using var activity = StorageTelemetry.Source.StartActivity("FindOverlaps");
+        var (id, type, zone, toZone, start, end) = (series.Id, series.Type, series.BiddingZone, series.ToBiddingZone, series.Start, series.End);
+
+        var overlapping = await _context.TimeSeries.AsNoTracking()
+            .Where(s => s.Id != id && s.Type == type && s.BiddingZone == zone && s.ToBiddingZone == toZone)
+            .Where(s => s.Start < end && s.End > start)
+            .OrderBy(s => s.Start)
+            .Select(s => s.Id)
+            .Take(10)
+            .ToListAsync(cancellationToken);
+
+        if (overlapping.Count > 0)
+        {
+            throw new OverlappingSeriesException(overlapping);
+        }
+    }
 
     private async Task<Guid?> ReadStoredVersionAsync(Guid id, CancellationToken cancellationToken)
     {

@@ -23,18 +23,6 @@ public class TimeSeriesTests
         Assert.All(series.Points, p => Assert.Equal(TimeSpan.Zero, p.Timestamp.Offset));
     }
 
-    [Fact]
-    public void Create_accepts_a_cross_border_flow_with_negative_values()
-    {
-        var definition = Definition(
-            TimeSeriesType.CrossBorderFlow, "NO2", toZone: "DK1",
-            points: [new TimeSeriesPoint(Midnight, -250m)]);
-
-        var series = TimeSeries.Create(definition);
-
-        Assert.Equal("DK1", series.ToBiddingZone?.ToString());
-    }
-
     public static TheoryData<string, TimeSeriesDefinition> InvalidDefinitions => new()
     {
         // A flow without a receiving zone, or consumption with one, can't be built at all, so isn't listed.
@@ -44,7 +32,8 @@ public class TimeSeriesTests
         { "resolution", Definition(resolution: TimeSpan.FromMinutes(30)) },
         { "points[0].value", Definition(TimeSeriesType.Production, points: [new TimeSeriesPoint(Midnight, -1m)]) },
         { "points[0].value", Definition(points: [new TimeSeriesPoint(Midnight, 1.0000001m)]) },
-        { "points[0].value", Definition(TimeSeriesType.CrossBorderFlow, toZone: "SE3", points: [new TimeSeriesPoint(Midnight, -10_000_000_000_000m)]) },
+        { "points[0].value", Definition(TimeSeriesType.CrossBorderFlow, toZone: "SE3", points: [new TimeSeriesPoint(Midnight, 10_000_000_000_000m)]) },
+        { "points[0].value", Definition(TimeSeriesType.CrossBorderFlow, toZone: "SE3", points: [new TimeSeriesPoint(Midnight, -1m)]) },
         { "points", Definition(points: []) },
         { "points[0].value", Definition(points: [new TimeSeriesPoint(Midnight, -1m)]) },
         { "points[0].timestamp", Definition(points: [new TimeSeriesPoint(Midnight.AddMinutes(7), 1m)]) },
