@@ -83,6 +83,19 @@ User secrets are per machine, so each developer runs the commands above once aft
 
 Then pick the environment above the `.http` file and send requests. Tokens last about three months (or pass `-ValidFor 365d`); run the script again when requests start returning `401`. It prints when the new token expires.
 
+### SQL Server in Docker
+
+`docker compose up` keeps the data in memory. To store it in SQL Server instead:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.sqlserver.yml up --build
+```
+
+- `docker-compose.sqlserver.yml` adds SQL Server and switches the API to it. Before the API starts, a one-off `migrations` container creates or updates the tables. It runs a small program that EF Core builds from the migrations (the `migrations` stage of the `Dockerfile`).
+- The data survives restarts. To start from scratch: `docker compose -f docker-compose.yml -f docker-compose.sqlserver.yml down --volumes`.
+- SQL Server Management Studio or similar can connect from this machine to `localhost,14330`, user `sa`, password `Local-dev-1`. That password only exists in this local container.
+- A collector container reads SQL Server's own metrics (connections, requests per second, lock waits, cache) and its most expensive queries of the last minute, and passes them on to the dashboard, where they show up as `sqlserver`. Its settings are in `otel-collector.yaml`.
+
 ### Logs, traces and metrics
 
 The API sends its logs, traces and metrics through OpenTelemetry, but only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Locally they go to the Aspire dashboard, which runs as a container:
@@ -90,7 +103,7 @@ The API sends its logs, traces and metrics through OpenTelemetry, but only when 
 - `docker compose up` starts the dashboard next to the API. Open `http://localhost:18888`; there's no login, since it only listens on this machine.
 - `dotnet run`, F5 and the `Container (Dockerfile)` profile send to the same dashboard. To start only the dashboard: `docker compose up dashboard --detach`.
 - If the dashboard isn't running, nothing breaks; the telemetry is just dropped.
-- A trace shows the request, the service and repository calls inside it, and each save; on SQL Server, the SQL calls too. Every request is traced, even when the caller asks not to (Visual Studio's HTTP client does). `/health` calls are left out.
+- A trace shows the request, the service and repository calls inside it, and each save; on SQL Server, the SQL calls too. With [SQL Server in Docker](#sql-server-in-docker), SQL Server's own metrics and most expensive queries show up as well. Every request is traced, even when the caller asks not to (Visual Studio's HTTP client does). `/health` calls are left out.
 - In Development, metrics go out every 5 seconds (`OTEL_METRIC_EXPORT_INTERVAL`), instead of every minute.
 - The tests and CI send nothing. One integration test (`TelemetryTests`) catches the API's traces in memory, to make sure they keep being produced.
 - Sending it somewhere else later (Grafana, Azure Monitor, …) is a settings change: point `OTEL_EXPORTER_OTLP_ENDPOINT` there.
@@ -170,6 +183,8 @@ ElectricityTimeSeries/
 ├── dotnet-tools.json                          Local tools: dotnet-ef, for migrations
 ├── Dockerfile                                 API container image
 ├── docker-compose.yml                         API in a container, for local development
+├── docker-compose.sqlserver.yml               The same, stored in SQL Server
+├── otel-collector.yaml                        Passes SQL Server's metrics to the dashboard
 ├── azure-pipelines.yml                        Azure DevOps pipeline
 ├── .github/workflows/ci.yml                   GitHub Actions pipeline
 ├── scripts/New-DevToken.ps1                   Stores a development token for the .http file
