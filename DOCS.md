@@ -83,7 +83,7 @@ dotnet ef database update --project src/ElectricityTimeSeries.Infrastructure --s
 
 ### OpenAPI and health
 
-In the Development environment, the OpenAPI document is served at `/openapi/v1.json`. A health endpoint is available at `/health`. Both are anonymous; every other endpoint requires a bearer token (see below).
+In the Development environment, the OpenAPI document is served at `/openapi/v1.json`. It shows `type` as its three names. A health endpoint is available at `/health`. Both are anonymous; every other endpoint requires a bearer token (see below).
 
 ### Getting a token for local development
 
