@@ -11,25 +11,37 @@ A small REST API built with C# and ASP.NET Core for managing electricity market 
 
 ## Running the API
 
-```powershell
-dotnet run --project src/ElectricityTimeSeries.Api --launch-profile https
-```
-
-The API listens on `https://localhost:7244` and `http://localhost:5021`. In Visual Studio, select the `https` or `http` launch profile.
-
 Each way of running the API has its own port, so they can all run at the same time:
 
 | How it's started | Address |
 |---|---|
-| `dotnet run`, or the `http` / `https` launch profile | `http://localhost:5021`, `https://localhost:7244` |
+| On your machine: `dotnet run`, or the `http` / `https` launch profile | `http://localhost:5021`, `https://localhost:7244` |
 | `docker compose up` | `http://localhost:5020` |
 | Visual Studio's `Container (Dockerfile)` launch profile | `http://localhost:5022` |
 
 The same `dotnet user-jwts` tokens work with `dotnet run` and `docker compose`.
 
-### Running in Docker
+### On your machine
 
-`docker-compose.yml` runs the API in a container, in the `Development` environment with in-memory storage, at `http://localhost:5020`:
+Only the .NET SDK is needed. The first time, trust the local HTTPS development certificate (Visual Studio offers to do this on its first HTTPS run):
+
+```powershell
+dotnet dev-certs https --trust
+```
+
+Then run the API from the command line:
+
+```powershell
+dotnet run --project src/ElectricityTimeSeries.Api --launch-profile https
+```
+
+In Visual Studio, pick `https` or `http` in the launch profile dropdown next to the Run button and press F5. F5 always runs the selected profile, so with `Container (Dockerfile)` selected it runs in Docker instead.
+
+Both launch profiles run in the `Development` environment: the OpenAPI document is served, tokens from `dotnet user-jwts` are accepted (see [Getting a token](#getting-a-token-for-local-development)), and data is kept in memory, so it's gone when the API stops. To keep it, see [Using SQL Server](#using-sql-server).
+
+### In Docker
+
+`docker-compose.yml` runs the API in a container, in the `Development` environment with in-memory storage, at `http://localhost:5020`, next to the [Aspire dashboard](#logs-traces-and-metrics):
 
 ```powershell
 docker compose up --detach --build
@@ -42,7 +54,14 @@ In Visual Studio, the `Container (Dockerfile)` launch profile builds the same `D
 
 ### Using SQL Server
 
-Data is kept in memory unless configured otherwise. To use SQL Server, set `Storage:Provider` to `SqlServer` and `Storage:ConnectionString` to its connection string, for example as the environment variables `Storage__Provider` and `Storage__ConnectionString`. The API doesn't create or update the tables itself, so apply the migrations once, and again after pulling new ones:
+Data is kept in memory unless configured otherwise. To use SQL Server, set `Storage:Provider` to `SqlServer` and `Storage:ConnectionString` to its connection string. On your machine, user secrets keep the connection string out of the repository:
+
+```powershell
+dotnet user-secrets set "Storage:Provider" "SqlServer" --project src/ElectricityTimeSeries.Api
+dotnet user-secrets set "Storage:ConnectionString" "<connection string>" --project src/ElectricityTimeSeries.Api
+```
+
+Elsewhere, use the environment variables `Storage__Provider` and `Storage__ConnectionString`. The API doesn't create or update the tables itself, so apply the migrations once, and again after pulling new ones:
 
 ```powershell
 dotnet tool restore
@@ -59,10 +78,10 @@ The API uses JWT bearer tokens. Locally, tokens are issued by the [`dotnet user-
 
 ```powershell
 # Token with full access (read + write)
-dotnet user-jwts create --project src/ElectricityTimeSeries.Api --name dev-user --scope TimeSeries.Read --scope TimeSeries.Write
+dotnet user-jwts create --project src/ElectricityTimeSeries.Api --name dev-user --scope TimeSeries.Read --scope TimeSeries.Write --claim client_id=local-dev
 
 # Read-only token
-dotnet user-jwts create --project src/ElectricityTimeSeries.Api --name reader --scope TimeSeries.Read
+dotnet user-jwts create --project src/ElectricityTimeSeries.Api --name reader --scope TimeSeries.Read --claim client_id=local-dev
 ```
 
 Send the printed token in the `Authorization` header:
@@ -228,13 +247,34 @@ The solution follows **Clean Architecture** principles, built on the **Dependenc
 - Scopes are read from the `scope` claim (OAuth 2.0 standard, used by `dotnet user-jwts`) and the `scp` claim (Microsoft Entra ID), including space-separated values.
 - A missing or invalid token returns `401 Unauthorized`; a valid token without the required scope returns `403 Forbidden`. Both use the Problem Details format.
 
+### Emergency revocation
+
+A token can be shut out before it expires, for example when a client's secret leaks. After the usual token checks, the API asks an `IPolicyEnforcementPoint` whether the token may still be used. If not, the request gets `401`, like any invalid token.
+
+For now that's a shortcut: `FileRevocationLedger` reads revocations from a JSON file and reloads it whenever the file changes, standing in for a policy service that pushes updates to every API. A real one replaces it by registering another `IPolicyEnforcementPoint`.
+
+```json
+{
+  "revocations": [
+    { "clientId": "billing-app", "reason": "Client secret leaked." },
+    { "tenantId": "contoso", "issuedBefore": "2026-11-23T10:00:00Z" }
+  ]
+}
+```
+
+- An entry revokes the tokens that match every field it sets: `clientId` (the `client_id` claim, or `azp`), `tenantId` (`tid`), `subject` (`sub`) and `issuedBefore` (tokens issued before that time; a token without `iat` counts as older). An entry that sets none of them revokes nothing.
+- `reason` is only logged. Callers just get `401`.
+- The file is `AccessPolicy:LedgerPath`, by default `access-ledger.json` in the API's folder (ignored by git). No file means nothing is revoked. If a new version can't be read, the previous one stays in force and an error is logged; writing the new file under another name and renaming it over the old one avoids half-written reads.
+- To try it, run the API with `dotnet run`, create `src/ElectricityTimeSeries.Api/access-ledger.json` revoking `local-dev` (the `client_id` of the development tokens above), and the next request returns `401`. Delete the file to undo it.
+- In a container, point `AccessPolicy__LedgerPath` at a mounted folder. Change notifications don't always reach a container, so set `DOTNET_USE_POLLING_FILE_WATCHER=true` too; the file is then checked every few seconds.
+
 ## Testing
 
 The tests are split into two levels. By default neither needs Docker, an identity provider or any local setup. Both use xUnit 3 on Microsoft.Testing.Platform (set in `global.json`).
 
 | Level | What it runs against | Tokens |
 |---|---|---|
-| **Unit** | Isolated classes: the time series rules, `BiddingZone`, `HasScope()`, `ScopeAuthorizationHandler` | none |
+| **Unit** | Isolated classes: the time series rules, `BiddingZone`, `HasScope()`, `ScopeAuthorizationHandler`, the revocation rules and ledger file | none |
 | **Integration** | The whole API, run inside the test process with `WebApplicationFactory` and called through HTTP requests (no network), on in-memory storage or SQL Server | signed by the test project with its own key pair |
 
 ```powershell
@@ -250,6 +290,7 @@ dotnet test
 - The time series endpoints are tested with raw JSON requests, so the tests also pin down the public JSON format: field names, type names and `PT15M` durations. They cover each operation, searching, every validation rule, `404` for unknown ids, and that each endpoint needs the right scope.
 - Each test gets its own API instance and starts on empty storage that no other test is using (`IsolatedApiTest`). So every test is repeatable, can check exact results ("the search returns exactly these two"), and runs in any order or in parallel. Tests that don't need a clean slate can share one API and database explicitly (`SharedApiFixture`); the authorization tests do, since they store nothing.
 - Authorization is tested through test-only endpoints (`AuthorizationProbeController`) that use the real policies. They are added only inside the test host and never ship with the API.
+- Each test's API also gets its own revocation ledger file. The revocation tests write one while the API runs and check that the revoked client's tokens start getting `401` while another client's carry on.
 - Telemetry is checked by catching the API's traces in memory (`TelemetryTests`), down to the save of a new series. A test request carries its own trace id, so it can't be confused with other tests' requests.
 
 ### Storage: in memory or SQL Server
