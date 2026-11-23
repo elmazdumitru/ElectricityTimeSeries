@@ -11,23 +11,35 @@ A small REST API built with C# and ASP.NET Core for managing electricity market 
 
 ## Running the API
 
-```powershell
-dotnet run --project src/ElectricityTimeSeries.Api --launch-profile https
-```
-
-The API listens on `https://localhost:7244` and `http://localhost:5021`. In Visual Studio, select the `https` or `http` launch profile.
-
 Each way of running the API has its own port, so they can all run at the same time:
 
 | How it's started | Address |
 |---|---|
-| `dotnet run`, or the `http` / `https` launch profile | `http://localhost:5021`, `https://localhost:7244` |
+| On your machine: `dotnet run`, or the `http` / `https` launch profile | `http://localhost:5021`, `https://localhost:7244` |
 | `docker compose up` | `http://localhost:5020` |
 | Visual Studio's `Container (Dockerfile)` launch profile | `http://localhost:5022` |
 
 The same `dotnet user-jwts` tokens work with `dotnet run` and `docker compose`.
 
-### Running in Docker
+### On your machine
+
+Only the .NET SDK is needed. The first time, trust the local HTTPS development certificate (Visual Studio offers to do this on its first HTTPS run):
+
+```powershell
+dotnet dev-certs https --trust
+```
+
+Then run the API from the command line:
+
+```powershell
+dotnet run --project src/ElectricityTimeSeries.Api --launch-profile https
+```
+
+In Visual Studio, pick `https` or `http` in the launch profile dropdown next to the Run button and press F5. F5 always runs the selected profile, so with `Container (Dockerfile)` selected it runs in Docker instead.
+
+Both launch profiles run in the `Development` environment: the OpenAPI document is served, tokens from `dotnet user-jwts` are accepted (see [Getting a token](#getting-a-token-for-local-development)), and data is kept in memory, so it's gone when the API stops. To keep it, see [Using SQL Server](#using-sql-server).
+
+### In Docker
 
 `docker-compose.yml` runs the API in a container, in the `Development` environment with in-memory storage, at `http://localhost:5020`:
 
@@ -42,7 +54,14 @@ In Visual Studio, the `Container (Dockerfile)` launch profile builds the same `D
 
 ### Using SQL Server
 
-Data is kept in memory unless configured otherwise. To use SQL Server, set `Storage:Provider` to `SqlServer` and `Storage:ConnectionString` to its connection string, for example as the environment variables `Storage__Provider` and `Storage__ConnectionString`. The API doesn't create or update the tables itself, so apply the migrations once, and again after pulling new ones:
+Data is kept in memory unless configured otherwise. To use SQL Server, set `Storage:Provider` to `SqlServer` and `Storage:ConnectionString` to its connection string. On your machine, user secrets keep the connection string out of the repository:
+
+```powershell
+dotnet user-secrets set "Storage:Provider" "SqlServer" --project src/ElectricityTimeSeries.Api
+dotnet user-secrets set "Storage:ConnectionString" "<connection string>" --project src/ElectricityTimeSeries.Api
+```
+
+Elsewhere, use the environment variables `Storage__Provider` and `Storage__ConnectionString`. The API doesn't create or update the tables itself, so apply the migrations once, and again after pulling new ones:
 
 ```powershell
 dotnet tool restore
