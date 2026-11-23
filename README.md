@@ -7,7 +7,9 @@ A small REST API in C# and ASP.NET Core for electricity market time series: prod
 - The [.NET 11 SDK](https://dotnet.microsoft.com/download/dotnet/11.0), 11.0.100 or later. `dotnet --version` shows which one you have.
 - Visual Studio 2026, up to date, with the **ASP.NET and web development** workload.
 
-Docker isn't needed: the API keeps its data in memory.
+- Optionally, [Docker Desktop](https://www.docker.com/products/docker-desktop/) on an x64 (Intel or AMD) processor, to run the API on SQL Server with the Aspire dashboard for its logs, traces and metrics.
+
+Without Docker, the API keeps its data in memory.
 
 ## Run it from Visual Studio
 
@@ -31,7 +33,25 @@ Docker isn't needed: the API keeps its data in memory.
 
    ![The .http file in Visual Studio with its environment list open, and a 201 Created response for a new production series](docs/screenshots/visual-studio-http-file.png)
 
-5. Run the tests from **Test Explorer**, or with `dotnet test` in the terminal. Without Docker, the integration tests use in-memory storage.
+5. Run the tests from **Test Explorer**, or with `dotnet test` in the terminal. They use in-memory storage, so Docker isn't needed.
+
+## Run it in Docker, on SQL Server
+
+Docker is only used for SQL Server. One script starts the API, SQL Server and the dashboard, and waits until the API answers:
+
+```powershell
+# -Fresh starts SQL Server empty
+./scripts/Start-SqlServer.ps1
+```
+
+If PowerShell refuses to run scripts, start it the same way as in step 2. Then:
+
+- The API is at `http://localhost:5020`. In the `.http` file, pick the **docker** environment; the token from step 2 works here too.
+- The [Aspire dashboard](DOCS.md#logs-traces-and-metrics) at `http://localhost:18888` shows the API's and SQL Server's logs, traces and metrics.
+- The data survives restarts. You can connect to SQL Server at `localhost,14330`, user `sa`, password `Local-dev-1`.
+- `$env:TEST_STORAGE = "SqlServer"; dotnet test` runs the integration tests on SQL Server. They start their own SQL Server container, so only Docker needs to be running.
+
+To stop: `docker compose down --remove-orphans`.
 
 ## The endpoints
 
@@ -54,4 +74,4 @@ Every endpoint needs the token from step 2.
 - [The data model, search and validation rules](DOCS.md#api)
 - [Security: tokens, scopes and emergency revocation](DOCS.md#security)
 - [Testing](DOCS.md#testing) and [continuous integration](DOCS.md#continuous-integration)
-- [Running it in Docker, on SQL Server, and watching it in the Aspire dashboard](DOCS.md#running-the-api)
+- [More on running it: SQL Server, Docker and the Aspire dashboard](DOCS.md#running-the-api)
