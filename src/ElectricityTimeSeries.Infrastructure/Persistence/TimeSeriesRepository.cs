@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using ElectricityTimeSeries.Core.Abstractions;
 using ElectricityTimeSeries.Core.Domain;
 using Microsoft.Data.SqlClient;
@@ -16,11 +17,15 @@ internal sealed class TimeSeriesRepository : ITimeSeriesRepository
         _racingSaves = racingSaves;
     }
 
-    public Task<TimeSeries?> GetAsync(Guid id, CancellationToken cancellationToken) =>
-        _context.TimeSeries.FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+    public async Task<TimeSeries?> GetAsync(Guid id, CancellationToken cancellationToken)
+    {
+        using var activity = StartActivity("TimeSeriesRepository.Get", id);
+        return await _context.TimeSeries.FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+    }
 
     public async Task<IReadOnlyList<TimeSeries>> FindAsync(TimeSeriesFilter filter, CancellationToken cancellationToken)
     {
+        using var activity = StartActivity("TimeSeriesRepository.Find");
         var query = _context.TimeSeries.AsNoTracking();
 
         if (filter.BiddingZone is { } zone)
@@ -44,21 +49,25 @@ internal sealed class TimeSeriesRepository : ITimeSeriesRepository
             query = query.Where(s => s.Start < to);
         }
 
-        return await query
+        var matches = await query
             .OrderBy(s => s.Start)
             .ThenBy(s => s.Id)
             .ToListAsync(cancellationToken);
+        activity?.SetTag("timeseries.count", matches.Count);
+        return matches;
     }
 
     public async Task AddAsync(TimeSeries series, CancellationToken cancellationToken)
     {
+        using var activity = StartActivity("TimeSeriesRepository.Add", series.Id);
         _context.TimeSeries.Add(series);
         StampNewVersion(series);
-        await _context.SaveChangesAsync(cancellationToken);
+        await SaveChangesAsync(cancellationToken);
     }
 
     public async Task<bool> UpdateAsync(TimeSeries series, CancellationToken cancellationToken)
     {
+        using var activity = StartActivity("TimeSeriesRepository.Update", series.Id);
         if (_context.Entry(series).State == EntityState.Detached)
         {
             _context.TimeSeries.Update(series);
@@ -70,6 +79,7 @@ internal sealed class TimeSeriesRepository : ITimeSeriesRepository
 
     public async Task<bool> DeleteAsync(TimeSeries series, CancellationToken cancellationToken)
     {
+        using var activity = StartActivity("TimeSeriesRepository.Delete", series.Id);
         _context.TimeSeries.Remove(series);
         return await SaveRacingChangesAsync(series, cancellationToken);
     }
@@ -84,10 +94,7 @@ internal sealed class TimeSeriesRepository : ITimeSeriesRepository
                 if (_racingSaves.ChecksVersionFirst)
                 {
                     var loadedVersion = (Guid)_context.Entry(series).Property(TimeSeriesConfiguration.VersionProperty).OriginalValue!;
-                    var storedVersion = await _context.TimeSeries.AsNoTracking()
-                        .Where(s => s.Id == series.Id)
-                        .Select(s => (Guid?)EF.Property<Guid>(s, TimeSeriesConfiguration.VersionProperty))
-                        .FirstOrDefaultAsync(cancellationToken);
+                    var storedVersion = await ReadStoredVersionAsync(series.Id, cancellationToken);
 
                     if (storedVersion is null)
                     {
@@ -102,7 +109,7 @@ internal sealed class TimeSeriesRepository : ITimeSeriesRepository
 
                 try
                 {
-                    await _context.SaveChangesAsync(cancellationToken);
+                    await SaveChangesAsync(cancellationToken);
                     return true;
                 }
                 catch (DbUpdateException exception) when (IsRace(exception))
@@ -112,6 +119,33 @@ internal sealed class TimeSeriesRepository : ITimeSeriesRepository
                 }
             },
             cancellationToken);
+
+    private async Task<Guid?> ReadStoredVersionAsync(Guid id, CancellationToken cancellationToken)
+    {
+        using var activity = StorageTelemetry.Source.StartActivity("ReadStoredVersion");
+        return await _context.TimeSeries.AsNoTracking()
+            .Where(s => s.Id == id)
+            .Select(s => (Guid?)EF.Property<Guid>(s, TimeSeriesConfiguration.VersionProperty))
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private async Task SaveChangesAsync(CancellationToken cancellationToken)
+    {
+        using var activity = StorageTelemetry.Source.StartActivity("SaveChanges");
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    private Activity? StartActivity(string name, Guid? seriesId = null)
+    {
+        var activity = StorageTelemetry.Source.StartActivity(name);
+        activity?.SetTag("storage.provider", _context.Database.IsInMemory() ? "InMemory" : "SqlServer");
+        if (seriesId is not null)
+        {
+            activity?.SetTag("timeseries.id", seriesId);
+        }
+
+        return activity;
+    }
 
     private static bool IsRace(DbUpdateException exception) =>
         exception is DbUpdateConcurrencyException ||
