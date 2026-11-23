@@ -7,7 +7,7 @@ namespace ElectricityTimeSeries.Api.Authorization.Enforcement;
 
 /// <summary>Reads revocations from a JSON file and reloads it whenever it changes, standing in for a
 /// policy bundle pushed to every API. If a new version can't be read, the previous one stays in force.</summary>
-public sealed class FileRevocationLedger : IPolicyEnforcementPoint, IDisposable
+public sealed partial class FileRevocationLedger : IPolicyEnforcementPoint, IDisposable
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { RespectNullableAnnotations = true };
 
@@ -54,7 +54,7 @@ public sealed class FileRevocationLedger : IPolicyEnforcementPoint, IDisposable
                 _ledger = File.Exists(_path)
                     ? JsonSerializer.Deserialize<RevocationLedger>(File.ReadAllText(_path), Json) ?? RevocationLedger.Empty
                     : RevocationLedger.Empty;
-                _logger.LogInformation("Loaded {Count} revocation(s) from {Path}.", _ledger.Revocations.Count, _path);
+                LogRevocationsLoaded(_logger, _ledger.Revocations.Count, _path);
                 return;
             }
             catch (IOException) when (attempt < 5)
@@ -63,9 +63,17 @@ public sealed class FileRevocationLedger : IPolicyEnforcementPoint, IDisposable
             }
             catch (Exception exception) when (exception is IOException or JsonException)
             {
-                _logger.LogError(exception, "Could not read the revocation ledger {Path}; keeping the previous version.", _path);
+                LogRevocationLedgerReadFailed(_logger, exception, _path);
                 return;
             }
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Loaded {Count} revocation(s) from {Path}.")]
+    private static partial void LogRevocationsLoaded(ILogger logger, int count, string path);
+
+    [LoggerMessage(
+        Level = LogLevel.Error,
+        Message = "Could not read the revocation ledger {Path}; keeping the previous version.")]
+    private static partial void LogRevocationLedgerReadFailed(ILogger logger, Exception exception, string path);
 }
