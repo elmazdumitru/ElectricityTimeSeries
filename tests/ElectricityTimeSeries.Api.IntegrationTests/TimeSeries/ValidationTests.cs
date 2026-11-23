@@ -48,7 +48,15 @@ public class ValidationTests : TimeSeriesApiTest
         { "biddingZone", WithNull(Series(), "biddingZone") },
         { "resolution", WithNull(Series(), "resolution") },
         { "points", WithNull(Series(), "points") },
+        { "points[0]", With(Series(), "points", new JsonArray((JsonNode?)null)) },
+        { "points[1]", WithNullPoint(Series(points: 3), 1) },
     };
+
+    private static JsonObject WithNullPoint(JsonObject body, int index)
+    {
+        body["points"]![index] = null;
+        return body;
+    }
 
     [Theory]
     [MemberData(nameof(InvalidRequests))]
