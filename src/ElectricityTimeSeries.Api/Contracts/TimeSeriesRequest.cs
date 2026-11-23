@@ -25,9 +25,12 @@ public closed class TimeSeriesRequest
     /// <summary>Call only after validation has passed.</summary>
     public TimeSeriesDefinition ToDefinition() => this switch
     {
-        ProductionRequest (var zone, var resolution, var points) => new ProductionDefinition(zone, resolution, points),
-        ConsumptionRequest (var zone, var resolution, var points) => new ConsumptionDefinition(zone, resolution, points),
-        CrossBorderFlowRequest (var zone, var toZone, var resolution, var points) => new CrossBorderFlowDefinition(zone, toZone, resolution, points),
+        ProductionRequest (var zone, var resolution, var points) =>
+            new ProductionDefinition { BiddingZone = zone, Resolution = resolution, Points = points },
+        ConsumptionRequest (var zone, var resolution, var points) =>
+            new ConsumptionDefinition { BiddingZone = zone, Resolution = resolution, Points = points },
+        CrossBorderFlowRequest (var zone, var toZone, var resolution, var points) =>
+            new CrossBorderFlowDefinition { BiddingZone = zone, ToBiddingZone = toZone, Resolution = resolution, Points = points },
     };
 
     internal void Deconstruct(out BiddingZone biddingZone, out TimeSpan resolution, out IReadOnlyList<TimeSeriesPoint> points)

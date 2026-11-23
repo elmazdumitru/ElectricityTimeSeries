@@ -18,27 +18,21 @@ public union TimeSeriesDefinition(ProductionDefinition, ConsumptionDefinition, C
     };
 }
 
-public abstract record TimeSeriesContent(
-    BiddingZone BiddingZone,
-    TimeSpan Resolution,
-    IReadOnlyList<TimeSeriesPoint> Points);
+public abstract record TimeSeriesContent
+{
+    public required BiddingZone BiddingZone { get; init; }
 
-public sealed record ProductionDefinition(
-    BiddingZone BiddingZone,
-    TimeSpan Resolution,
-    IReadOnlyList<TimeSeriesPoint> Points)
-    : TimeSeriesContent(BiddingZone, Resolution, Points);
+    public required TimeSpan Resolution { get; init; }
 
-public sealed record ConsumptionDefinition(
-    BiddingZone BiddingZone,
-    TimeSpan Resolution,
-    IReadOnlyList<TimeSeriesPoint> Points)
-    : TimeSeriesContent(BiddingZone, Resolution, Points);
+    public required IReadOnlyList<TimeSeriesPoint> Points { get; init; }
+}
 
-/// <summary>Electricity flowing from <paramref name="BiddingZone"/> to <paramref name="ToBiddingZone"/>.</summary>
-public sealed record CrossBorderFlowDefinition(
-    BiddingZone BiddingZone,
-    BiddingZone ToBiddingZone,
-    TimeSpan Resolution,
-    IReadOnlyList<TimeSeriesPoint> Points)
-    : TimeSeriesContent(BiddingZone, Resolution, Points);
+public sealed record ProductionDefinition : TimeSeriesContent;
+
+public sealed record ConsumptionDefinition : TimeSeriesContent;
+
+/// <summary>Electricity flowing from <see cref="TimeSeriesContent.BiddingZone"/> to <see cref="ToBiddingZone"/>.</summary>
+public sealed record CrossBorderFlowDefinition : TimeSeriesContent
+{
+    public required BiddingZone ToBiddingZone { get; init; }
+}

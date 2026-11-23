@@ -150,9 +150,17 @@ public class TimeSeriesTests
 
         return type switch
         {
-            TimeSeriesType.Production => new ProductionDefinition(biddingZone, step, values),
-            TimeSeriesType.Consumption => new ConsumptionDefinition(biddingZone, step, values),
-            TimeSeriesType.CrossBorderFlow => new CrossBorderFlowDefinition(biddingZone, BiddingZone.From(toZone ?? "SE3"), step, values),
+            TimeSeriesType.Production =>
+                new ProductionDefinition { BiddingZone = biddingZone, Resolution = step, Points = values },
+            TimeSeriesType.Consumption =>
+                new ConsumptionDefinition { BiddingZone = biddingZone, Resolution = step, Points = values },
+            TimeSeriesType.CrossBorderFlow => new CrossBorderFlowDefinition
+            {
+                BiddingZone = biddingZone,
+                ToBiddingZone = BiddingZone.From(toZone ?? "SE3"),
+                Resolution = step,
+                Points = values,
+            },
             _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
         };
     }
