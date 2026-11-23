@@ -2,11 +2,11 @@
 
 A small REST API built with C# and ASP.NET Core for managing electricity market time series data, such as production, consumption and cross-border flows between bidding zones.
 
-> **Status:** the CRUD endpoints, filtering, validation, authentication and authorization, tests and CI are in place. Data is stored in memory through EF Core; moving to SQL Server is the planned next step.
+> **Status:** the CRUD endpoints, filtering, validation, authentication and authorization, tests and CI are in place. Data is stored through EF Core, in memory (the default) or in SQL Server; the integration tests run against both.
 
 ## Requirements
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download) (`global.json` requires 10.0.100 or any later 10.0 SDK)
+- [.NET 11 SDK](https://dotnet.microsoft.com/download) (`global.json` requires 11.0.100 or any later 11.0 SDK)
 - [Docker](https://www.docker.com/) with Docker Compose, optional: only for running the API in a container
 
 ## Running the API
@@ -15,7 +15,17 @@ A small REST API built with C# and ASP.NET Core for managing electricity market 
 dotnet run --project src/ElectricityTimeSeries.Api --launch-profile https
 ```
 
-The API listens on `https://localhost:7244` and `http://localhost:5020`. In Visual Studio, select the `https` or `http` launch profile.
+The API listens on `https://localhost:7244` and `http://localhost:5021`. In Visual Studio, select the `https` or `http` launch profile.
+
+Each way of running the API has its own port, so they can all run at the same time:
+
+| How it's started | Address |
+|---|---|
+| `dotnet run`, or the `http` / `https` launch profile | `http://localhost:5021`, `https://localhost:7244` |
+| `docker compose up` | `http://localhost:5020` |
+| Visual Studio's `Container (Dockerfile)` launch profile | `http://localhost:5022` |
+
+The same `dotnet user-jwts` tokens work with all three.
 
 ### Running in Docker
 
@@ -26,7 +36,9 @@ docker compose up --detach --build
 docker compose down
 ```
 
-The container uses the same tokens as `dotnet run`: the host's user secrets folder, which holds the `dotnet user-jwts` signing key, is mounted read-only into the container. On Windows this works as is. On Linux or macOS, set `USER_SECRETS_PATH=~/.microsoft/usersecrets` first. Port 5020 is shared with the `http` launch profile, so stop one before starting the other.
+The container uses the same tokens as `dotnet run`: the host's user secrets folder, which holds the `dotnet user-jwts` signing key, is mounted read-only into the container. On Windows this works as is. On Linux or macOS, set `USER_SECRETS_PATH=~/.microsoft/usersecrets` first.
+
+In Visual Studio, the `Container (Dockerfile)` launch profile builds the same `Dockerfile` and runs it at `http://localhost:5022`.
 
 In the Development environment, the OpenAPI document is served at `/openapi/v1.json`. A health endpoint is available at `/health`. Both are anonymous; every other endpoint requires a bearer token (see below).
 
@@ -50,6 +62,16 @@ Authorization: Bearer <token>
 
 User secrets are per machine, so each developer runs the commands above once after cloning.
 
+### Trying the API from Visual Studio
+
+`src/ElectricityTimeSeries.Api/ElectricityTimeSeries.Api.http` has a request for every endpoint and the common errors. Its environments (`local` for the `https` launch profile, `local-http` for the `http` one, `docker` for `docker compose`) are in `http-client.env.json` and read the token from your user secrets, so nothing secret is committed. Store a token there once:
+
+```powershell
+./scripts/New-DevToken.ps1
+```
+
+Then pick the environment above the `.http` file and send requests. Tokens last about three months (or pass `-ValidFor 365d`); run the script again when requests start returning `401`. It prints when the new token expires.
+
 ## API
 
 | Method | URL | Scope | Result |
@@ -57,8 +79,8 @@ User secrets are per machine, so each developer runs the commands above once aft
 | `GET` | `/api/time-series?biddingZone=&type=&from=&to=` | `TimeSeries.Read` | `200` with the matching series |
 | `GET` | `/api/time-series/{id}` | `TimeSeries.Read` | `200`, or `404` |
 | `POST` | `/api/time-series` | `TimeSeries.Write` | `201` with a `Location` header |
-| `PUT` | `/api/time-series/{id}` | `TimeSeries.Write` | `200` with the replaced series, or `404` |
-| `DELETE` | `/api/time-series/{id}` | `TimeSeries.Write` | `204`, or `404` |
+| `PUT` | `/api/time-series/{id}` | `TimeSeries.Write` | `200` with the replaced series, `404`, or `409` if changed at the same moment by another request |
+| `DELETE` | `/api/time-series/{id}` | `TimeSeries.Write` | `204`, `404`, or `409` if changed at the same moment by another request |
 
 Example body for `POST` and `PUT`:
 
@@ -98,11 +120,16 @@ A **time series** is a block of evenly spaced values for one bidding zone, for e
 
 Requests that break a rule return `400 Bad Request` with the list of invalid fields, in the Problem Details format. The rules:
 
+- Missing or `null` fields are reported by name, all at once, for example `resolution` or `points[0].value`. A wrong value type (text where a number is expected) is reported on the field itself, for example `$.points[0].timestamp`.
+- `type` is read first, because it decides which fields are expected. A missing or unknown `type` is reported on the whole object (`$`). Its values are case-sensitive: `Consumption`, not `consumption`.
+- Only `CrossBorderFlow` takes a `toBiddingZone`; for the other types it's rejected as an unknown field (`$.toBiddingZone`).
+
 - The bidding zones must be known (see [Assumptions](#assumptions)). A flow needs a different receiving zone; other types can't have one.
 - The resolution must be 15 minutes or 1 hour.
 - There must be between 1 and 35,136 points (one year of 15-minute values).
 - Each point must start on a resolution boundary (for example 10:15, not 10:07) and follow the previous one by exactly one step: no gaps, duplicates or reordering.
 - Production and consumption can't be negative. Flows can, as a negative value means the electricity flows the other way.
+- Values have at most 6 decimal places (watt-level precision for MW) and lie between ±9,999,999,999,999.999999, the range SQL Server stores exactly (`decimal(19,6)`). The same rule applies to in-memory storage, so both behave alike.
 - In a search, `from` must be earlier than `to`.
 
 ## Solution structure
@@ -110,7 +137,12 @@ Requests that break a rule return `400 Bad Request` with the list of invalid fie
 ```
 ElectricityTimeSeries/
 ├── ElectricityTimeSeries.slnx
-├── global.json
+├── global.json                                SDK version (11.0, any later feature band)
+├── Directory.Build.props                      Settings shared by all projects (target framework, nullable, implicit usings)
+├── Directory.Build.targets                    Shared build steps (empty for now)
+├── Directory.Packages.props                   Every package version, in one place
+├── NuGet.config                               Package sources: nuget.org only
+├── .editorconfig                              Code style
 ├── Dockerfile                                 API container image
 ├── docker-compose.yml                         API in a container, for local development
 ├── .github/workflows/ci.yml                   GitHub Actions pipeline
@@ -149,7 +181,9 @@ The solution follows **Clean Architecture** principles, built on the **Dependenc
 - **Authentication and authorization live in the Api layer.** They are HTTP concerns, so Core and Infrastructure stay unaware of them (see [Security](#security)).
 - **The domain class is also the stored class.** There are two sets of classes, not three: request/response classes in Api, and domain classes in Core. EF Core saves the domain classes directly, and how they map to storage is described in Infrastructure (`TimeSeriesConfiguration`), so Core has no storage code. The only concession is a private constructor and private setters that EF Core uses when loading data.
 - **The domain enforces its own rules.** A `TimeSeries` can only be created or changed through `Create` and `Update`, which check every business rule, so an invalid series can't exist. A broken rule throws `DomainValidationException`, which the Api turns into a `400` response.
-- **EF Core with in-memory storage, for now.** The assignment allows in-memory storage. Using EF Core already means moving to SQL Server is a change inside Infrastructure only: replace `UseInMemoryDatabase` with `UseSqlServer` and add migrations. The column sizes, precision and indexes for that are already configured.
+- **One shape per kind of time series.** `TimeSeriesDefinition` is a C# 15 union of `ProductionDefinition`, `ConsumptionDefinition` and `CrossBorderFlowDefinition`. Only a flow has a receiving zone, so a flow without one, or consumption with one, can't even be written in code. Every `switch` over the union must handle all three kinds, so adding a kind makes the compiler point at each place to update. 
+- **The request is a closed hierarchy, not a union.** `TimeSeriesRequest` is a C# 15 `closed` class with exactly three subclasses: `ProductionRequest`, `ConsumptionRequest` and `CrossBorderFlowRequest`. Like a union, a `switch` over it must cover all three. Unlike a union, System.Text.Json reads and writes the `type` field by itself (`[JsonPolymorphic]` with `[JsonDerivedType]`), which is what Microsoft recommends for JSON objects told apart by a field; unions are for cases that differ in shape. The OpenAPI document shows the three kinds with a proper discriminator. Request fields are nullable and marked `[Required]`, so ASP.NET Core reports every missing or `null` field by name, all at once. They're nullable on purpose: `[Required]` only checks for `null`, so on a plain struct a missing point `value` would quietly become 0 and pass. Two settings make it fit: `AllowOutOfOrderMetadataProperties` lets `type` appear anywhere in the object, and `MissingTypeJsonInputFormatter` turns a missing `type` into a `400` (System.Text.Json reports it as a non-JSON error, which ASP.NET Core would otherwise answer with a `500`).
+- **EF Core, in memory or in SQL Server.** The `Storage` configuration section picks the storage: `Provider` is `InMemory` (the default, which the assignment allows) or `SqlServer`, with a `ConnectionString`. The choice lives entirely in Infrastructure (`AddInfrastructure`); nothing else knows which one is used. SQL Server tables come from EF Core migrations (`Persistence/Migrations`), applied by `InitializeStorageAsync`. To add a migration: `dotnet tool restore`, then `dotnet ef migrations add <Name> --project src/ElectricityTimeSeries.Infrastructure --startup-project src/ElectricityTimeSeries.Infrastructure --output-dir Persistence/Migrations`.
 - **Simplified layering.** A full Clean Architecture template usually splits Core into separate Domain and Application projects. Given the scope of this API, they are merged into a single Core project, which keeps the solution easy to navigate while preserving the dependency rule.
 
 ## Security
@@ -172,7 +206,7 @@ The solution follows **Clean Architecture** principles, built on the **Dependenc
 
 ## Testing
 
-The tests are split into two levels. Neither needs Docker, an identity provider or any local setup.
+The tests are split into two levels. By default neither needs Docker, an identity provider or any local setup. Both use xUnit 3 on Microsoft.Testing.Platform (set in `global.json`).
 
 | Level | What it runs against | Tokens |
 |---|---|---|
@@ -190,14 +224,25 @@ dotnet test
 - Each test run creates a **public/private key pair** (`TestSigningKeys`). `TestTokenFactory` signs tokens with the private key; the API only ever sees the public key, published by the fake identity provider in the same format Keycloak or Entra ID use. Nothing secret is shared between the tests and the API.
 - Requests go through the API's real token checks, so the tests also cover expired, wrongly addressed, wrongly signed and tampered tokens, and the trick of signing with the public key as if it were a password.
 - The time series endpoints are tested with raw JSON requests, so the tests also pin down the public JSON format: field names, type names and `PT15M` durations. They cover each operation, searching, every validation rule, `404` for unknown ids, and that each endpoint needs the right scope.
-- Each test host gets its own in-memory store. Tests in the same class share a host, so each test uses its own data and only checks the series it created.
+- Each test gets its own API instance with its own, empty storage (`IsolatedApiTest`), created before the test and removed after it. So every test is repeatable, can check exact results ("the search returns exactly these two"), and runs in any order or in parallel. Tests that don't need a clean slate can share one API and database explicitly (`SharedApiFixture`); the authorization tests do, since they store nothing.
 - Authorization is tested through test-only endpoints (`AuthorizationProbeController`) that use the real policies. They are added only inside the test host and never ship with the API.
+
+### Storage: in memory or SQL Server
+
+The integration tests run against either storage, chosen with the `TEST_STORAGE` environment variable:
+
+```powershell
+dotnet test                                   # in-memory storage (default)
+$env:TEST_STORAGE = "SqlServer"; dotnet test  # SQL Server in Docker
+```
+
+With `SqlServer`, the tests start one SQL Server container themselves through [Testcontainers](https://dotnet.testcontainers.org/) and remove it when the run ends, so only Docker needs to be running. Starting SQL Server is the slow part, so the one server is shared by the whole run; isolation comes from giving every test an empty database inside it that no other test is using. Creating and migrating a database takes seconds, so they are pooled: a test borrows one, and afterwards its tables are emptied and it goes back to the pool (or is dropped, if emptying fails). Only as many databases are created as tests run at the same time.
 
 **Not covered by the integration tests:** the network connection to a real identity provider (its address, HTTPS, and the provider's own setup).
 
 ### Continuous integration
 
-`.github/workflows/ci.yml` runs on every push to `main` and on every pull request. It restores and builds in Release, runs the unit and integration tests, and uploads the test results.
+Two equivalent pipelines restore and build in Release, run the unit tests, run the integration tests twice (in-memory storage, then SQL Server in Docker), and publish the test results:
 
 ## Assumptions
 
@@ -207,6 +252,6 @@ dotnet test
 - **Resolution:** 15 minutes (the Nordic market time unit since 2025) or 1 hour (older data).
 - **Time zones:** clients may send any offset; times are stored and returned in UTC.
 - **Overlaps are allowed:** several series may cover the same zone, type and time. The API doesn't decide which one is correct.
-- **Last write wins:** two clients updating the same series at the same time aren't detected.
+- **Simultaneous changes:** when two requests change or delete the same series at the same moment, one is saved and the other gets `409 Conflict` (get the series again and retry); a change is never half-applied. Each series has a hidden version stamp for this, kept in storage only. There is no `ETag` / `If-Match` yet, so a client that read a series earlier and saves later still overwrites changes made in between.
 - **No paging:** a search returns every match. Clients are expected to narrow it with filters.
-- **Data is lost on restart,** because storage is in memory.
+- **With in-memory storage, data is lost on restart.**

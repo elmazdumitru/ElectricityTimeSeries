@@ -9,11 +9,7 @@ public static class ClaimsPrincipalExtensions
     private static readonly string[] ScopeClaimTypes =
         ["scope", "scp", "http://schemas.microsoft.com/identity/claims/scope"];
 
-    /// <summary>
-    /// Returns true when any scope claim contains <paramref name="scope"/>.
-    /// Handles both one claim per scope and a single claim with space-separated scopes.
-    /// Scope values are compared case-sensitively, as defined by OAuth 2.0 (RFC 6749, section 3.3).
-    /// </summary>
+    /// <summary>Accepts one claim per scope or one claim with space-separated scopes. Case-sensitive, as OAuth 2.0 requires.</summary>
     public static bool HasScope(this ClaimsPrincipal user, string scope) =>
         user.Claims
             .Where(claim => ScopeClaimTypes.Contains(claim.Type))

@@ -26,7 +26,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          global-json-file: global.json
 
       - name: Restore
         run: dotnet restore
@@ -36,15 +36,24 @@ jobs:
 
       - name: Unit tests
         run: >-
-          dotnet test tests/ElectricityTimeSeries.UnitTests
+          dotnet test --project tests/ElectricityTimeSeries.UnitTests
           --configuration Release --no-build
-          --logger trx --results-directory TestResults
+          --report-xunit-trx --results-directory TestResults/unit
 
-      - name: Integration tests
+      - name: Integration tests (in-memory storage)
         run: >-
-          dotnet test tests/ElectricityTimeSeries.Api.IntegrationTests
+          dotnet test --project tests/ElectricityTimeSeries.Api.IntegrationTests
           --configuration Release --no-build
-          --logger trx --results-directory TestResults
+          --report-xunit-trx --results-directory TestResults/in-memory
+
+      # The tests start SQL Server themselves (Testcontainers); the runner only needs Docker.
+      - name: Integration tests (SQL Server)
+        env:
+          TEST_STORAGE: SqlServer
+        run: >-
+          dotnet test --project tests/ElectricityTimeSeries.Api.IntegrationTests
+          --configuration Release --no-build
+          --report-xunit-trx --results-directory TestResults/sql-server
 
       - name: Upload test results
         if: always()

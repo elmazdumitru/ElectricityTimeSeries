@@ -4,10 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace ElectricityTimeSeries.Api.ErrorHandling;
 
-/// <summary>
-/// Turns a broken business rule into a 400 Bad Request, in the same format the framework uses
-/// for its own input checks, so clients see one error format.
-/// </summary>
+/// <summary>Turns a broken business rule into a 400 in the framework's own validation format, so clients see one error format.</summary>
 public sealed class DomainValidationExceptionHandler : IExceptionHandler
 {
     private readonly IProblemDetailsService _problemDetails;

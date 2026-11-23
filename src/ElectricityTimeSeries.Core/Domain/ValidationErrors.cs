@@ -1,6 +1,5 @@
 namespace ElectricityTimeSeries.Core.Domain;
 
-/// <summary>Collects validation errors per field and throws them together.</summary>
 internal sealed class ValidationErrors
 {
     private readonly Dictionary<string, List<string>> _errors = [];

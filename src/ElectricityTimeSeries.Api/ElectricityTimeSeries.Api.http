@@ -1,6 +1,165 @@
-@ElectricityTimeSeries.Api_HostAddress = http://localhost:5020
+# Pick the environment matching your launch profile (local = https, local-http, docker); a mismatch gives 401.
+# Store a token once with ./scripts/New-DevToken.ps1, and again when requests start returning 401.
 
-GET {{ElectricityTimeSeries.Api_HostAddress}}/openapi/v1.json
+### Health check (no token needed)
+GET {{host}}/health
+
+### OpenAPI document (no token needed, Development only)
+GET {{host}}/openapi/v1.json
 Accept: application/json
 
-###
+
+#################### Create ####################
+
+### Consumption in NO1, one hour in 15-minute steps
+# @name createConsumption
+POST {{host}}/api/time-series
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "type": "Consumption",
+  "biddingZone": "NO1",
+  "resolution": "PT15M",
+  "points": [
+    { "timestamp": "2025-11-22T00:00:00Z", "value": 4210.5 },
+    { "timestamp": "2025-11-22T00:15:00Z", "value": 4185.0 },
+    { "timestamp": "2025-11-22T00:30:00Z", "value": 4150.2 },
+    { "timestamp": "2025-11-22T00:45:00Z", "value": 4120.8 }
+  ]
+}
+
+### Production in SE3, two hours in 1-hour steps
+POST {{host}}/api/time-series
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "type": "Production",
+  "biddingZone": "SE3",
+  "resolution": "PT1H",
+  "points": [
+    { "timestamp": "2025-11-22T00:00:00Z", "value": 9800 },
+    { "timestamp": "2025-11-22T01:00:00Z", "value": 9650 }
+  ]
+}
+
+### Cross-border flow from NO2 to DK1 (a negative value means the flow goes the other way)
+POST {{host}}/api/time-series
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "type": "CrossBorderFlow",
+  "biddingZone": "NO2",
+  "toBiddingZone": "DK1",
+  "resolution": "PT15M",
+  "points": [
+    { "timestamp": "2025-11-22T00:00:00Z", "value": 1250.5 },
+    { "timestamp": "2025-11-22T00:15:00Z", "value": -90 }
+  ]
+}
+
+
+#################### Read ####################
+
+### Get the consumption series created above
+GET {{host}}/api/time-series/{{createConsumption.response.body.$.id}}
+Authorization: Bearer {{token}}
+
+### Search: everything in or out of NO2 (includes the flow to DK1)
+GET {{host}}/api/time-series?biddingZone=NO2
+Authorization: Bearer {{token}}
+
+### Search: consumption only
+GET {{host}}/api/time-series?type=Consumption
+Authorization: Bearer {{token}}
+
+### Search: NO1 between 00:15 and 00:45 UTC (returns only the points inside the interval)
+GET {{host}}/api/time-series?biddingZone=NO1&from=2025-11-22T00:15:00Z&to=2025-11-22T00:45:00Z
+Authorization: Bearer {{token}}
+
+### Search: the same interval in Oslo time (+01:00, with "+" written as %2B)
+GET {{host}}/api/time-series?biddingZone=NO1&from=2025-11-22T01:15:00%2B01:00&to=2025-11-22T01:45:00%2B01:00
+Authorization: Bearer {{token}}
+
+
+#################### Update and delete ####################
+
+### Replace the consumption series created above
+PUT {{host}}/api/time-series/{{createConsumption.response.body.$.id}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "type": "Consumption",
+  "biddingZone": "NO1",
+  "resolution": "PT1H",
+  "points": [
+    { "timestamp": "2025-11-22T00:00:00Z", "value": 4166.6 }
+  ]
+}
+
+### Delete the consumption series created above
+DELETE {{host}}/api/time-series/{{createConsumption.response.body.$.id}}
+Authorization: Bearer {{token}}
+
+
+#################### Errors ####################
+
+### 401: no token
+GET {{host}}/api/time-series
+
+### 404: unknown id
+GET {{host}}/api/time-series/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{token}}
+
+### 400: missing "type"
+POST {{host}}/api/time-series
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "biddingZone": "NO1",
+  "resolution": "PT15M",
+  "points": [{ "timestamp": "2025-11-22T00:00:00Z", "value": 1 }]
+}
+
+### 400: every missing field of a flow, reported together
+POST {{host}}/api/time-series
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "type": "CrossBorderFlow" }
+
+### 400: consumption can't have a receiving zone
+POST {{host}}/api/time-series
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "type": "Consumption",
+  "biddingZone": "NO1",
+  "toBiddingZone": "SE3",
+  "resolution": "PT15M",
+  "points": [{ "timestamp": "2025-11-22T00:00:00Z", "value": 1 }]
+}
+
+### 400: business rules (unknown zone, gap between points, negative consumption)
+POST {{host}}/api/time-series
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "type": "Consumption",
+  "biddingZone": "XX1",
+  "resolution": "PT15M",
+  "points": [
+    { "timestamp": "2025-11-22T00:00:00Z", "value": 100 },
+    { "timestamp": "2025-11-22T00:30:00Z", "value": -5 }
+  ]
+}
+
+### 400: "from" must be earlier than "to"
+GET {{host}}/api/time-series?from=2025-11-22T02:00:00Z&to=2025-11-22T01:00:00Z
+Authorization: Bearer {{token}}

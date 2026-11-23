@@ -4,11 +4,7 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace ElectricityTimeSeries.Api.IntegrationTests.Infrastructure;
 
-/// <summary>
-/// A public/private key pair, created fresh for each test run, playing the role of the
-/// identity provider's signing keys. Tests sign tokens with the private key; the API only
-/// ever receives the public key, the same way it does with a real identity provider.
-/// </summary>
+/// <summary>A fresh key pair per test run, standing in for the identity provider's signing keys.</summary>
 public sealed class TestSigningKeys : IDisposable
 {
     private readonly RSA _rsa = RSA.Create(2048);

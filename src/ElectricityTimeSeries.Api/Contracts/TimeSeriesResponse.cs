@@ -1,16 +1,14 @@
-using System.Text.Json.Serialization;
-using ElectricityTimeSeries.Api.Json;
 using ElectricityTimeSeries.Core.Domain;
 
 namespace ElectricityTimeSeries.Api.Contracts;
 
-/// <summary>A time series as returned by the API. Times are in UTC.</summary>
+/// <summary>Times are in UTC.</summary>
 public sealed record TimeSeriesResponse(
     Guid Id,
     TimeSeriesType Type,
-    string BiddingZone,
-    string? ToBiddingZone,
-    [property: JsonConverter(typeof(IsoDurationJsonConverter))] TimeSpan Resolution,
+    BiddingZone BiddingZone,
+    BiddingZone? ToBiddingZone,
+    TimeSpan Resolution,
     DateTimeOffset Start,
     DateTimeOffset End,
     IReadOnlyList<TimeSeriesPointResponse> Points)
