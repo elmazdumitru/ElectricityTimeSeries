@@ -4,10 +4,7 @@ using System.Xml;
 
 namespace ElectricityTimeSeries.Api.Json;
 
-/// <summary>
-/// Reads and writes durations as ISO 8601 text ("PT15M", "PT1H"), the format used for
-/// resolutions in electricity market data.
-/// </summary>
+/// <summary>Reads and writes durations as ISO 8601 text ("PT15M"), the usual format in electricity market data.</summary>
 public sealed class IsoDurationJsonConverter : JsonConverter<TimeSpan>
 {
     public override TimeSpan Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)

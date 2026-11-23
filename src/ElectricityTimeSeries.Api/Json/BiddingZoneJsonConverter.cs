@@ -4,12 +4,8 @@ using ElectricityTimeSeries.Core.Domain;
 
 namespace ElectricityTimeSeries.Api.Json;
 
-/// <summary>
-/// Reads and writes a <see cref="BiddingZone"/> as its plain text code, for example "NO1".
-/// Any text is accepted, known or not, so an unknown zone is reported by the business rules
-/// together with every other error, instead of stopping the JSON reading.
-/// </summary>
-/// <remarks>JSON <c>null</c> never reaches this converter; the property is simply left <c>null</c>.</remarks>
+/// <summary>Accepts any text, known zone or not, so an unknown zone is reported with all other errors
+/// instead of stopping the JSON reading. JSON null never reaches this converter.</summary>
 public sealed class BiddingZoneJsonConverter : JsonConverter<BiddingZone>
 {
     public override BiddingZone Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
@@ -23,5 +19,5 @@ public sealed class BiddingZoneJsonConverter : JsonConverter<BiddingZone>
     }
 
     public override void Write(Utf8JsonWriter writer, BiddingZone value, JsonSerializerOptions options) =>
-        writer.WriteStringValue(value.Value);
+        writer.WriteStringValue(value.ToString());
 }

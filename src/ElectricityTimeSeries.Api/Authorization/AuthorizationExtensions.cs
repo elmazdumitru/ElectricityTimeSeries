@@ -4,11 +4,7 @@ namespace ElectricityTimeSeries.Api.Authorization;
 
 public static class AuthorizationExtensions
 {
-    /// <summary>
-    /// Adds JWT bearer authentication and the API's authorization policies.
-    /// Bearer options (Authority, ValidAudiences, ValidIssuer, signing keys) are bound
-    /// from the "Authentication:Schemes:Bearer" configuration section.
-    /// </summary>
+    /// <summary>Bearer options (authority, audiences, keys) are read from the "Authentication:Schemes:Bearer" section.</summary>
     public static IServiceCollection AddApiAuthentication(this IServiceCollection services)
     {
         services.AddAuthentication().AddJwtBearer();

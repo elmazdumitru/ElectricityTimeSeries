@@ -2,9 +2,6 @@ using Microsoft.AspNetCore.Authorization;
 
 namespace ElectricityTimeSeries.Api.Authorization;
 
-/// <summary>
-/// Succeeds a <see cref="ScopeRequirement"/> when the user's token contains the required scope.
-/// </summary>
 public sealed class ScopeAuthorizationHandler : AuthorizationHandler<ScopeRequirement>
 {
     private readonly ILogger<ScopeAuthorizationHandler> _logger;

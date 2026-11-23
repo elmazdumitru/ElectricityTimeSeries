@@ -3,11 +3,9 @@ using ElectricityTimeSeries.Core.Domain;
 
 namespace ElectricityTimeSeries.Api.Contracts;
 
-/// <summary>The search filters, read from the query string. All are optional.</summary>
 public sealed class TimeSeriesQuery
 {
     /// <summary>Series in this zone, including flows into or out of it.</summary>
-    /// <remarks>Read from the URL through <see cref="BiddingZone.TryParse"/>.</remarks>
     public BiddingZone? BiddingZone { get; init; }
 
     public TimeSeriesType? Type { get; init; }

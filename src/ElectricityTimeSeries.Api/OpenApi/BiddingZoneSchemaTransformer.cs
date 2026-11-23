@@ -5,15 +5,12 @@ using Microsoft.OpenApi;
 
 namespace ElectricityTimeSeries.Api.OpenApi;
 
-/// <summary>
-/// Describes <see cref="BiddingZone"/> in the OpenAPI document the way it appears in JSON:
-/// as plain text, for example "NO1", instead of an object with its C# properties.
-/// </summary>
+/// <summary>Shows <see cref="BiddingZone"/> in OpenAPI as plain text ("NO1"), as in JSON, not as an object.</summary>
 public sealed class BiddingZoneSchemaTransformer : IOpenApiSchemaTransformer
 {
     public Task TransformAsync(OpenApiSchema schema, OpenApiSchemaTransformerContext context, CancellationToken cancellationToken)
     {
-        if (context.JsonTypeInfo.Type == typeof(BiddingZone))
+        if ((Nullable.GetUnderlyingType(context.JsonTypeInfo.Type) ?? context.JsonTypeInfo.Type) == typeof(BiddingZone))
         {
             schema.Type = JsonSchemaType.String;
             schema.Properties = null;
