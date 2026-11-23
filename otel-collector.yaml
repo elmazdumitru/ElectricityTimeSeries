@@ -1,0 +1,45 @@
+# The OpenTelemetry Collector in docker-compose.sqlserver.yml: SQL Server can't send telemetry itself,
+# so the collector reads it every 10 seconds and passes it on to the Aspire dashboard.
+receivers:
+  sql_server:
+    server: sqlserver
+    port: 1433
+    username: sa
+    password: ${env:SQLSERVER_PASSWORD}
+    collection_interval: 10s
+    # Leaves out the collector's own queries; server-wide metrics are still reported.
+    databases: [ElectricityTimeSeries]
+    events:
+      # The most expensive queries of the last minute, as logs.
+      db.server.top_query:
+        enabled: true
+
+processors:
+  # Shows up in the dashboard as "sqlserver", next to the API.
+  resource:
+    attributes:
+      - key: service.name
+        value: sqlserver
+        action: upsert
+  # The query text as the log message, instead of an empty one.
+  transform:
+    log_statements:
+      - set(log.body, log.attributes["db.query.text"]) where log.attributes["db.query.text"] != nil
+  batch: {}
+
+exporters:
+  otlp_grpc:
+    endpoint: dashboard:18889
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    metrics:
+      receivers: [sql_server]
+      processors: [resource, batch]
+      exporters: [otlp_grpc]
+    logs:
+      receivers: [sql_server]
+      processors: [resource, transform, batch]
+      exporters: [otlp_grpc]
